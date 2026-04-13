@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -14,28 +16,53 @@ import (
 	"github.com/cdrusu/smuf/internal/logger"
 	"github.com/cdrusu/smuf/internal/tunnel"
 	"github.com/hashicorp/yamux"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 func main() {
-	controlPort := envOr("SMUF_CONTROL_PORT", "7000")
-	httpPort := envOr("SMUF_HTTP_PORT", "8080")
-	domain := envOr("SMUF_DOMAIN", "localhost")
+	cfg := serverConfig{
+		controlPort:    envOr("SMUF_CONTROL_PORT", "7000"),
+		httpPort:       envOr("SMUF_HTTP_PORT", "8080"),
+		httpsPort:      envOr("SMUF_HTTPS_PORT", "443"),
+		domain:         envOr("SMUF_DOMAIN", "localhost"),
+		httpsEnabled:   envBool("SMUF_HTTPS", false),
+		acmeCacheDir:   envOr("SMUF_ACME_CACHE", "certs"),
+		acmeEmail:      os.Getenv("SMUF_ACME_EMAIL"),
+		publicHTTPPort: envOr("SMUF_PUBLIC_HTTP_PORT", ""),
+		publicTLSPort:  envOr("SMUF_PUBLIC_HTTPS_PORT", ""),
+	}
 
 	registry := tunnel.NewRegistry()
 
-	go startHTTP(httpPort, domain, registry)
-	startControl(controlPort, httpPort, domain, registry)
+	go startPublicHTTP(cfg, registry)
+	startControl(cfg, registry)
+}
+
+type serverConfig struct {
+	controlPort    string
+	httpPort       string
+	httpsPort      string
+	domain         string
+	httpsEnabled   bool
+	acmeCacheDir   string
+	acmeEmail      string
+	publicHTTPPort string
+	publicTLSPort  string
 }
 
 // startControl acepta conexiones TCP de clientes smuf y las registra como túneles.
-func startControl(port, httpPort, domain string, registry *tunnel.Registry) {
-	ln, err := net.Listen("tcp", ":"+port)
+func startControl(cfg serverConfig, registry *tunnel.Registry) {
+	ln, err := net.Listen("tcp", ":"+cfg.controlPort)
 	if err != nil {
-		logger.Fatal("cannot bind control port %s: %v", port, err)
+		logger.Fatal("cannot bind control port %s: %v", cfg.controlPort, err)
 	}
 	defer ln.Close()
 
-	logger.Info("smuf-server ready | control :%s | http :%s | domain %s", port, httpPort, domain)
+	if cfg.httpsEnabled {
+		logger.Info("smuf-server ready | control :%s | http :%s | https :%s | domain %s", cfg.controlPort, cfg.httpPort, cfg.httpsPort, cfg.domain)
+	} else {
+		logger.Info("smuf-server ready | control :%s | http :%s | domain %s", cfg.controlPort, cfg.httpPort, cfg.domain)
+	}
 
 	for {
 		conn, err := ln.Accept()
@@ -43,13 +70,13 @@ func startControl(port, httpPort, domain string, registry *tunnel.Registry) {
 			logger.Error("accept: %v", err)
 			return
 		}
-		go handleTunnel(conn, httpPort, domain, registry)
+		go handleTunnel(conn, cfg, registry)
 	}
 }
 
 // handleTunnel ejecuta el handshake, establece la sesión yamux y bloquea
 // hasta que el cliente desconecte.
-func handleTunnel(conn net.Conn, httpPort, domain string, registry *tunnel.Registry) {
+func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 	reader := bufio.NewReader(conn)
 
 	// Handshake: esperamos "PORT <puerto>\n"
@@ -69,9 +96,10 @@ func handleTunnel(conn net.Conn, httpPort, domain string, registry *tunnel.Regis
 
 	localPort := parts[1]
 	id := newID()
+	publicURL := publicTunnelURL(id, cfg)
 
-	// Respondemos con el ID asignado
-	fmt.Fprintf(conn, "OK %s\n", id)
+	// Respondemos con el ID asignado y la URL pública que debe mostrar el cliente.
+	fmt.Fprintf(conn, "OK %s %s\n", id, publicURL)
 
 	// Hacemos upgrade a yamux usando BufConn para no perder bytes ya bufferizados
 	session, err := yamux.Server(tunnel.NewBufConn(conn, reader), yamux.DefaultConfig())
@@ -82,7 +110,7 @@ func handleTunnel(conn net.Conn, httpPort, domain string, registry *tunnel.Regis
 	}
 
 	registry.Add(id, session)
-	logger.Info("[%s] tunnel open → local port %s | public http://%s.%s:%s", id, localPort, id, domain, httpPort)
+	logger.Info("[%s] tunnel open → local port %s | public %s", id, localPort, publicURL)
 
 	defer func() {
 		session.Close()
@@ -94,16 +122,82 @@ func handleTunnel(conn net.Conn, httpPort, domain string, registry *tunnel.Regis
 	<-session.CloseChan()
 }
 
-// startHTTP levanta el servidor HTTP público que enruta peticiones a túneles activos.
-func startHTTP(port, domain string, registry *tunnel.Registry) {
-	ln, err := net.Listen("tcp", ":"+port)
-	if err != nil {
-		logger.Fatal("cannot bind http port %s: %v", port, err)
-	}
-	logger.Info("http proxy listening on :%s", port)
+// startPublicHTTP levanta el servidor público. En modo HTTP enruta peticiones
+// directamente; en modo HTTPS atiende challenges ACME y redirige el resto.
+func startPublicHTTP(cfg serverConfig, registry *tunnel.Registry) {
+	proxy := &httpProxy{domain: cfg.domain, registry: registry}
 
-	srv := &http.Server{Handler: &httpProxy{domain: domain, registry: registry}}
-	srv.Serve(ln)
+	if cfg.httpsEnabled {
+		startHTTPS(cfg, proxy)
+		return
+	}
+
+	ln, err := net.Listen("tcp", ":"+cfg.httpPort)
+	if err != nil {
+		logger.Fatal("cannot bind http port %s: %v", cfg.httpPort, err)
+	}
+	logger.Info("http proxy listening on :%s", cfg.httpPort)
+
+	srv := &http.Server{Handler: proxy}
+	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		logger.Fatal("http server: %v", err)
+	}
+}
+
+func startHTTPS(cfg serverConfig, proxy http.Handler) {
+	manager := &autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		Cache:      autocert.DirCache(cfg.acmeCacheDir),
+		Email:      cfg.acmeEmail,
+		HostPolicy: tunnelHostPolicy(cfg.domain),
+	}
+
+	httpSrv := &http.Server{
+		Addr:    ":" + cfg.httpPort,
+		Handler: manager.HTTPHandler(redirectToHTTPS(cfg)),
+	}
+	go func() {
+		logger.Info("http ACME/redirect listening on :%s", cfg.httpPort)
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Fatal("http ACME/redirect server: %v", err)
+		}
+	}()
+
+	tlsSrv := &http.Server{
+		Addr:      ":" + cfg.httpsPort,
+		Handler:   proxy,
+		TLSConfig: &tls.Config{GetCertificate: manager.GetCertificate, MinVersion: tls.VersionTLS12},
+	}
+
+	logger.Info("https proxy listening on :%s | acme cache %s", cfg.httpsPort, cfg.acmeCacheDir)
+	if err := tlsSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		logger.Fatal("https server: %v", err)
+	}
+}
+
+func tunnelHostPolicy(domain string) autocert.HostPolicy {
+	return func(_ context.Context, host string) error {
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		host = strings.TrimSuffix(strings.ToLower(host), ".")
+		domain = strings.TrimSuffix(strings.ToLower(domain), ".")
+		if host == domain || strings.HasSuffix(host, "."+domain) {
+			return nil
+		}
+		return fmt.Errorf("acme host not allowed: %s", host)
+	}
+}
+
+func redirectToHTTPS(cfg serverConfig) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		targetHost := withPort(host, publicPort(cfg.publicTLSPort, cfg.httpsPort))
+		http.Redirect(w, r, "https://"+targetHost+r.URL.RequestURI(), http.StatusMovedPermanently)
+	})
 }
 
 type httpProxy struct {
@@ -175,4 +269,36 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv(key)))
+	if v == "" {
+		return fallback
+	}
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func publicTunnelURL(id string, cfg serverConfig) string {
+	host := id + "." + cfg.domain
+	if cfg.httpsEnabled {
+		port := publicPort(cfg.publicTLSPort, cfg.httpsPort)
+		return "https://" + withPort(host, port)
+	}
+	port := publicPort(cfg.publicHTTPPort, cfg.httpPort)
+	return "http://" + withPort(host, port)
+}
+
+func publicPort(publicPort, listenPort string) string {
+	if publicPort != "" {
+		return publicPort
+	}
+	return listenPort
+}
+
+func withPort(host, port string) string {
+	if port == "" || port == "80" || port == "443" {
+		return host
+	}
+	return net.JoinHostPort(host, port)
 }

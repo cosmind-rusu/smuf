@@ -50,7 +50,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	id := strings.TrimPrefix(line, "OK ")
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		fmt.Fprintf(os.Stderr, "Error: invalid server response: %s\n", line)
+		os.Exit(1)
+	}
+
+	id := fields[1]
+	publicURL := ""
+	if len(fields) >= 3 {
+		publicURL = fields[2]
+	}
 
 	// --- Upgrade a yamux ---
 	// Usamos BufConn para que los bytes ya bufferizados del handshake no se pierdan
@@ -61,9 +71,11 @@ func main() {
 	}
 	defer session.Close()
 
-	serverHost := strings.Split(serverAddr, ":")[0]
-	httpPort := envOr("SMUF_HTTP_PORT", "8080")
-	publicURL := fmt.Sprintf("http://%s.%s:%s", id, serverHost, httpPort)
+	if publicURL == "" {
+		serverHost := strings.Split(serverAddr, ":")[0]
+		httpPort := envOr("SMUF_HTTP_PORT", "8080")
+		publicURL = fmt.Sprintf("http://%s.%s:%s", id, serverHost, httpPort)
+	}
 
 	printBanner(port, publicURL)
 

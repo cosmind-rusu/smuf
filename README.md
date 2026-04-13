@@ -68,6 +68,19 @@ Eso genera dos ejecutables:
 [2026-04-13 12:00:00] INFO  http proxy listening on :8080
 ```
 
+Para producción con HTTPS automático:
+
+```bash
+SMUF_DOMAIN=tudominio.com \
+SMUF_HTTP_PORT=80 \
+SMUF_HTTPS=true \
+SMUF_HTTPS_PORT=443 \
+SMUF_ACME_EMAIL=tu@email.com \
+./smuf-server
+```
+
+Necesitas apuntar `*.tudominio.com` al servidor y tener los puertos públicos `80` y `443` accesibles. Let's Encrypt usa el puerto `80` para validar el dominio y smuf redirige el tráfico normal a HTTPS.
+
 ### PASO 2 — Abre un túnel desde tu máquina
 
 Con tu app corriendo en `localhost:3000`:
@@ -99,18 +112,28 @@ Sin archivos de config. Todo por variables de entorno:
 |---|---|---|
 | `SMUF_CONTROL_PORT` | `7000` | Puerto donde los clientes se conectan |
 | `SMUF_HTTP_PORT` | `8080` | Puerto HTTP público |
+| `SMUF_HTTPS` | `false` | Activa HTTPS automático con Let's Encrypt |
+| `SMUF_HTTPS_PORT` | `443` | Puerto HTTPS público cuando `SMUF_HTTPS=true` |
 | `SMUF_DOMAIN` | `localhost` | Tu dominio base (`tudominio.com`) |
+| `SMUF_ACME_EMAIL` | *(vacío)* | Email opcional para avisos de Let's Encrypt |
+| `SMUF_ACME_CACHE` | `certs` | Carpeta donde se guardan los certificados ACME |
+| `SMUF_PUBLIC_HTTP_PORT` | *(vacío)* | Puerto HTTP que se anuncia si difiere del puerto local |
+| `SMUF_PUBLIC_HTTPS_PORT` | *(vacío)* | Puerto HTTPS que se anuncia si difiere del puerto local |
 
 ```bash
 SMUF_DOMAIN=tudominio.com SMUF_HTTP_PORT=80 ./smuf-server
 ```
+
+Con HTTPS activo, `SMUF_HTTP_PORT` queda reservado para los challenges de Let's Encrypt y redirecciones. El proxy de túneles escucha en `SMUF_HTTPS_PORT`.
+
+Si el binario escucha en puertos internos detrás de un proxy o contenedor, usa `SMUF_PUBLIC_HTTP_PORT` y `SMUF_PUBLIC_HTTPS_PORT` para que la URL mostrada al cliente use los puertos públicos correctos.
 
 ### Cliente (`smuf`)
 
 | Variable | Default | Descripción |
 |---|---|---|
 | `SMUF_SERVER` | `localhost:7000` | Dirección de tu servidor |
-| `SMUF_HTTP_PORT` | `8080` | Puerto HTTP del servidor |
+| `SMUF_HTTP_PORT` | `8080` | Puerto HTTP del servidor cuando se conecta a un servidor antiguo que no devuelve URL pública |
 
 ```bash
 SMUF_SERVER=tudominio.com:7000 ./smuf 3000
@@ -150,7 +173,7 @@ SMUF_SERVER=tudominio.com:7000 ./smuf 3000
 
 Funcionalidades planeadas — contribuciones bienvenidas:
 
-- [ ] **HTTPS** — TLS automático con Let's Encrypt
+- [x] **HTTPS** — TLS automático con Let's Encrypt
 - [ ] **Autenticación por token** — control de quién puede abrir túneles
 - [ ] **Subdominio personalizado** — `miapp.tudominio.com` en lugar de un ID aleatorio
 - [ ] **WebSockets** — soporte para apps en tiempo real
