@@ -1,127 +1,190 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" width="1200" height="360">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360">
   <defs>
-
-    <!-- Background gradient: deep dark left → slightly lighter right -->
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%"   stop-color="#0d0e12"/>
       <stop offset="100%" stop-color="#15181e"/>
     </linearGradient>
-
-    <!-- Subtle red glow behind the cloud -->
     <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%"   stop-color="#E53E3E" stop-opacity="0.18"/>
+      <stop offset="0%"   stop-color="#E53E3E" stop-opacity="0.22"/>
       <stop offset="100%" stop-color="#E53E3E" stop-opacity="0"/>
     </radialGradient>
-
-    <!-- Cloud gradient -->
-    <radialGradient id="cloudGrad" cx="45%" cy="35%" r="65%">
-      <stop offset="0%"   stop-color="#FF4D4D"/>
-      <stop offset="100%" stop-color="#9B1C1C"/>
-    </radialGradient>
-
-    <!-- Cloud shine -->
-    <linearGradient id="cloudShine" x1="20%" y1="0%" x2="80%" y2="100%">
-      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.20"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
-    </linearGradient>
-
-    <!-- Cloud drop shadow -->
-    <filter id="cloudShadow" x="-30%" y="-30%" width="160%" height="180%">
-      <feDropShadow dx="0" dy="6" stdDeviation="12"
-                    flood-color="#E53E3E" flood-opacity="0.40"/>
-    </filter>
-
-    <!-- Dot grid pattern -->
-    <pattern id="dots" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
-      <circle cx="1" cy="1" r="1" fill="#ffffff" opacity="0.04"/>
-    </pattern>
-
-    <!-- Faint red horizontal line -->
     <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%"   stop-color="#E53E3E" stop-opacity="0"/>
-      <stop offset="30%"  stop-color="#E53E3E" stop-opacity="0.6"/>
-      <stop offset="70%"  stop-color="#E53E3E" stop-opacity="0.6"/>
+      <stop offset="30%"  stop-color="#E53E3E" stop-opacity="0.5"/>
+      <stop offset="70%"  stop-color="#E53E3E" stop-opacity="0.5"/>
       <stop offset="100%" stop-color="#E53E3E" stop-opacity="0"/>
     </linearGradient>
-
+    <filter id="cloudGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <pattern id="dots" x="0" y="0" width="28" height="28" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#ffffff" opacity="0.035"/>
+    </pattern>
   </defs>
 
-  <!-- ── Background ── -->
-  <rect width="1200" height="360" fill="url(#bgGrad)"/>
-  <!-- Dot texture -->
+  <style>
+    /* ── Cloud dispersion animation ── */
+
+    /* Main cloud body: expands and fades, then snaps back */
+    #cloud-main {
+      animation: disperse-main 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      transform-box: fill-box;
+      transform-origin: center center;
+    }
+
+    /* Front bump: drifts right + more agressive fade, small delay */
+    #cloud-bump {
+      animation: disperse-bump 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      animation-delay: 0.18s;
+      transform-box: fill-box;
+      transform-origin: center center;
+    }
+
+    /* Highlight follows the main cloud */
+    #cloud-highlight {
+      animation: disperse-highlight 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      transform-box: fill-box;
+      transform-origin: center center;
+    }
+
+    /* Ground shadow shrinks and fades as cloud disperses */
+    #cloud-shadow {
+      animation: disperse-shadow 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      transform-box: fill-box;
+      transform-origin: center center;
+    }
+
+    /* Glow layer dims when dispersed */
+    #cloud-glow-layer {
+      animation: disperse-glow 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    /* Ambient ellipse follows */
+    #cloud-ambient {
+      animation: disperse-ambient 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    /* ── Keyframes ── */
+
+    /* 0–22%: hold normal | 22–58%: disperse | 58–78%: reform | 78–100%: hold */
+
+    @keyframes disperse-main {
+      0%,  22% { transform: scale(1);    opacity: 1;    }
+      58%      { transform: scale(1.09); opacity: 0.25; }
+      78%, 100%{ transform: scale(1);    opacity: 1;    }
+    }
+
+    @keyframes disperse-bump {
+      0%,  22% { transform: translate(0px, 0px)  scale(1);    opacity: 1;    }
+      58%      { transform: translate(9px, 3px)  scale(1.15); opacity: 0.15; }
+      78%, 100%{ transform: translate(0px, 0px)  scale(1);    opacity: 1;    }
+    }
+
+    @keyframes disperse-highlight {
+      0%,  22% { transform: translate(0px, 0px) scale(1);    opacity: 1;    }
+      58%      { transform: translate(-4px,-5px) scale(1.1); opacity: 0.2;  }
+      78%, 100%{ transform: translate(0px, 0px) scale(1);    opacity: 1;    }
+    }
+
+    @keyframes disperse-shadow {
+      0%,  22% { transform: scale(1);    opacity: 1;   }
+      58%      { transform: scale(0.6);  opacity: 0;   }
+      78%, 100%{ transform: scale(1);    opacity: 1;   }
+    }
+
+    @keyframes disperse-glow {
+      0%,  22% { opacity: 0.45; }
+      58%      { opacity: 0.06; }
+      78%, 100%{ opacity: 0.45; }
+    }
+
+    @keyframes disperse-ambient {
+      0%,  22% { opacity: 1;    }
+      58%      { opacity: 0.15; }
+      78%, 100%{ opacity: 1;    }
+    }
+  </style>
+
+  <!-- Background -->
+  <rect width="1200" height="360" fill="url(#bg)"/>
   <rect width="1200" height="360" fill="url(#dots)"/>
 
-  <!-- ── Red ambient glow centred on cloud area ── -->
-  <ellipse cx="260" cy="180" rx="220" ry="160" fill="url(#glow)"/>
+  <!-- Ambient glow -->
+  <ellipse id="cloud-ambient" cx="185" cy="180" rx="200" ry="165" fill="url(#glow)"/>
 
-  <!-- ── Faint red separator line at bottom ── -->
-  <rect x="0" y="340" width="1200" height="1" fill="url(#lineGrad)" opacity="0.5"/>
-
-  <!-- ── Cloud (scaled ~3.2×, centred at 260,180) ── -->
-  <g transform="translate(120,90) scale(3.2)" filter="url(#cloudShadow)">
-    <g fill="url(#cloudGrad)">
-      <rect x="12" y="36" width="76" height="26" rx="13"/>
-      <circle cx="30" cy="37" r="15"/>
-      <circle cx="52" cy="28" r="21"/>
-      <circle cx="72" cy="37" r="13"/>
-    </g>
-    <g fill="url(#cloudShine)">
-      <rect x="12" y="36" width="76" height="26" rx="13"/>
-      <circle cx="30" cy="37" r="15"/>
-      <circle cx="52" cy="28" r="21"/>
-      <circle cx="72" cy="37" r="13"/>
-    </g>
-    <!-- Specular highlight -->
-    <ellipse cx="40" cy="23" rx="11" ry="6"
-             fill="#ffffff" opacity="0.15"
-             transform="rotate(-18,40,23)"/>
+  <!-- Glow blur layer -->
+  <g id="cloud-glow-layer"
+     transform="translate(70,108) scale(0.9)"
+     filter="url(#cloudGlow)" opacity="0.45"
+     fill="none" fill-rule="evenodd">
+    <path fill="#E53935"
+      d="M82 112 H170 C188 112 202 99 202 83 C202 68 190 56 174 55
+         C168 39 153 28 136 28 C116 28 99 42 94 61
+         C92 61 89 60 86 60 C67 60 52 74 52 92
+         C52 103 58 112 82 112Z"/>
+    <path fill="#C62828"
+      d="M182 112 H210 C222 112 232 103 232 91 C232 79 222 70 210 70
+         C203 70 197 73 192 79 C191 79 190 79 189 79
+         C179 79 171 87 171 96 C171 105 176 112 182 112Z"/>
   </g>
 
-  <!-- ── Uppercase label (section marker, Design.md §3) ── -->
+  <!-- Solid logo — paths animated individually -->
+  <g transform="translate(70,108) scale(0.9)" fill="none" fill-rule="evenodd">
+    <ellipse id="cloud-shadow"
+      cx="128" cy="128" rx="72" ry="10" fill="#00000014"/>
+    <path id="cloud-main" fill="#E53935"
+      d="M82 112 H170 C188 112 202 99 202 83 C202 68 190 56 174 55
+         C168 39 153 28 136 28 C116 28 99 42 94 61
+         C92 61 89 60 86 60 C67 60 52 74 52 92
+         C52 103 58 112 82 112Z"/>
+    <path id="cloud-bump" fill="#C62828"
+      d="M182 112 H210 C222 112 232 103 232 91 C232 79 222 70 210 70
+         C203 70 197 73 192 79 C191 79 190 79 189 79
+         C179 79 171 87 171 96 C171 105 176 112 182 112Z"/>
+    <path id="cloud-highlight" fill="#FFFFFF22"
+      d="M104 52 C113 42 126 37 140 39 C126 41 114 48 107 58
+         C105 61 101 60 99 58 C97 56 98 54 104 52Z"/>
+  </g>
+
+  <!-- Bottom separator -->
+  <rect x="0" y="341" width="1200" height="1" fill="url(#lineGrad)"/>
+
+  <!-- Uppercase label -->
   <text x="520" y="126"
-        font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial"
+        font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial"
         font-size="13" font-weight="600" letter-spacing="1.3"
-        text-transform="uppercase" fill="#656a76"
-        dominant-baseline="middle">
-    SELF-HOSTED HTTP TUNNEL
-  </text>
+        fill="#656a76">SELF-HOSTED HTTP TUNNEL</text>
 
-  <!-- ── Hero headline: "smuf" ── -->
-  <text x="516" y="200"
-        font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial"
-        font-size="96" font-weight="700" letter-spacing="-2"
-        fill="#efeff1" dominant-baseline="middle">
-    smuf
-  </text>
+  <!-- Hero headline -->
+  <text x="516" y="210"
+        font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial"
+        font-size="100" font-weight="700" letter-spacing="-3"
+        fill="#efeff1">smuf</text>
 
-  <!-- ── Red accent underline beneath the headline ── -->
-  <rect x="516" y="248" width="200" height="3" rx="2" fill="#E53E3E" opacity="0.85"/>
+  <!-- Red accent underline -->
+  <rect x="516" y="230" width="196" height="3" rx="1.5" fill="#E53E3E"/>
 
-  <!-- ── Tagline / body large (Design.md §3) ── -->
-  <text x="516" y="286"
-        font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial"
-        font-size="20" font-weight="400" fill="#b2b6bd" letter-spacing="0">
+  <!-- Tagline -->
+  <text x="516" y="272"
+        font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial"
+        font-size="20" font-weight="400" fill="#b2b6bd">
     Expone tu app local a Internet. Sin depender de nadie.
   </text>
 
-  <!-- ── Version badge ── -->
-  <rect x="516" y="316" width="96" height="26" rx="5"
-        fill="#1a0000" stroke="#E53E3E" stroke-width="1" stroke-opacity="0.6"/>
-  <text x="564" y="329"
-        font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial"
-        font-size="12" font-weight="600" fill="#FF4D4D"
-        text-anchor="middle" dominant-baseline="middle">
-    Go · MIT
-  </text>
+  <!-- Badge: Go · MIT -->
+  <rect x="516" y="300" width="68" height="24" rx="5"
+        fill="#1a0000" stroke="#E53E3E" stroke-width="1" stroke-opacity="0.55"/>
+  <text x="550" y="312"
+        font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial"
+        font-size="11" font-weight="600" fill="#FF4D4D"
+        text-anchor="middle" dominant-baseline="middle">Go · MIT</text>
 
-  <!-- ── "self-hosted" badge ── -->
-  <rect x="622" y="316" width="110" height="26" rx="5"
-        fill="#0d0e12" stroke="#656a76" stroke-width="1" stroke-opacity="0.5"/>
-  <text x="677" y="329"
-        font-family="system-ui, -apple-system, Segoe UI, Helvetica, Arial"
-        font-size="12" font-weight="600" fill="#b2b6bd"
-        text-anchor="middle" dominant-baseline="middle">
-    self-hosted ✓
-  </text>
-
+  <!-- Badge: self-hosted -->
+  <rect x="594" y="300" width="108" height="24" rx="5"
+        fill="#0d0e12" stroke="#656a76" stroke-width="1" stroke-opacity="0.4"/>
+  <text x="648" y="312"
+        font-family="system-ui,-apple-system,Segoe UI,Helvetica,Arial"
+        font-size="11" font-weight="600" fill="#b2b6bd"
+        text-anchor="middle" dominant-baseline="middle">self-hosted ✓</text>
 </svg>
