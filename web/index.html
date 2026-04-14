@@ -1,0 +1,423 @@
+<!doctype html>
+<!-- REWRITTEN: simple landing, valores Fácil/Rápido/Seguro -->
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>smuf — túneles HTTP self-hosted</title>
+    <meta
+      name="description"
+      content="smuf te da una URL pública para tu localhost en segundos. Open source, self-hosted y escrito en Go."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              hcpDark: "#15181e",
+              hcpDarker: "#0d0e12",
+              hcpLight: "#f1f2f3",
+              hcpGray: "#656a76",
+              hcpTextDark: "#efeff1",
+              hcpTextSoft: "#d5d7db",
+              logoRed: "#e53e3e",
+              logoRedDeep: "#731e25",
+              terraform: "#7b42bc",
+              vault: "#ffcf25",
+              waypoint: "#14c6cb",
+              linkBlue: "#2264d6",
+              actionBlue: "#1060ff"
+            },
+            boxShadow: {
+              whisper:
+                "rgba(97,104,117,0.05) 0px 1px 1px, rgba(97,104,117,0.05) 0px 2px 2px"
+            },
+            maxWidth: {
+              content: "1150px"
+            }
+          }
+        }
+      };
+    </script>
+    <style>
+      :root {
+        --focus: #e53e3e;
+      }
+      body {
+        font-family: "Manrope", "Segoe UI", system-ui, sans-serif;
+      }
+      .brand-heading {
+        font-family: "Manrope", "HashiCorp Sans", "Segoe UI", system-ui, sans-serif;
+        font-feature-settings: "kern" 1;
+      }
+      .mono-ui {
+        font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .focus-ring:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: 2px;
+      }
+      .hero-grid {
+        background-image:
+          linear-gradient(rgba(178, 182, 189, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(178, 182, 189, 0.08) 1px, transparent 1px);
+        background-size: 32px 32px;
+      }
+      .reveal-up {
+        animation: reveal-up 0.7s ease-out both;
+      }
+      @keyframes reveal-up {
+        from {
+          opacity: 0;
+          transform: translateY(14px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .tunnel-wrap {
+        position: relative;
+        border-radius: 8px;
+        overflow: hidden;
+        background: radial-gradient(ellipse at 50% 100%, #250f14 0%, #120d11 60%, #0d0e12 100%);
+        padding: 28px 24px 20px;
+      }
+      .flow-track {
+        position: relative;
+        height: 3px;
+        background: linear-gradient(90deg, transparent 0%, rgba(229,62,62,0.15) 15%, rgba(229,62,62,0.15) 85%, transparent 100%);
+        border-radius: 9999px;
+        flex: 1;
+        margin: 0 6px;
+        overflow: hidden;
+      }
+      .flow-track::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(90deg, rgba(229,62,62,0.35) 0px, rgba(229,62,62,0.35) 8px, transparent 8px, transparent 16px);
+      }
+      .flow-packet {
+        position: absolute;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        border-radius: 9999px;
+        background: #e53e3e;
+        box-shadow: 0 0 12px rgba(229,62,62,0.9), 0 0 24px rgba(229,62,62,0.45);
+        transform: translateY(-50%);
+        animation: flow-travel 2.4s cubic-bezier(0.4,0,0.6,1) infinite;
+        left: -12px;
+      }
+      .flow-packet:nth-child(2) { animation-delay: 0.8s; }
+      .flow-packet:nth-child(3) { animation-delay: 1.6s; }
+      .flow-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+      .flow-node-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+        border: 1px solid rgba(229,62,62,0.45);
+        background: #1d0d12;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 16px rgba(229,62,62,0.12);
+      }
+      .flow-node-icon svg {
+        width: 22px;
+        height: 22px;
+        stroke: #e53e3e;
+        fill: none;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .flow-node-label {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: #656a76;
+      }
+      .flow-node-sub {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        color: #efeff1;
+        opacity: 0.75;
+      }
+      @keyframes flow-travel {
+        0%   { left: -12px; opacity: 0; }
+        8%   { opacity: 1; }
+        92%  { opacity: 1; }
+        100% { left: calc(100% + 12px); opacity: 0; }
+      }
+    </style>
+  </head>
+  <body class="bg-[#0d0e12] text-hcpTextDark antialiased">
+
+    <!-- HEADER -->
+    <header class="sticky top-0 z-40 border-b border-[#e53e3e22] bg-[#0d0e12]/95 backdrop-blur">
+      <div class="mx-auto flex w-full max-w-content items-center justify-between px-6 py-4 lg:px-10">
+        <a href="#" class="focus-ring inline-flex items-center gap-2.5 rounded-sm">
+          <img src="logo.svg" alt="smuf" class="h-8 w-8" />
+          <span class="brand-heading text-xl font-extrabold tracking-tight text-white">smuf</span>
+        </a>
+        <nav class="hidden items-center gap-8 text-[15px] font-medium text-hcpTextSoft md:flex">
+          <a href="#values" class="focus-ring rounded-sm transition-colors hover:text-white">Ventajas</a>
+          <a href="#how" class="focus-ring rounded-sm transition-colors hover:text-white">Cómo funciona</a>
+          <a href="#start" class="focus-ring rounded-sm transition-colors hover:text-white">Empezar</a>
+        </nav>
+        <a
+          href="https://github.com/cdrusu/smuf"
+          target="_blank"
+          class="focus-ring hidden items-center gap-2 rounded-[5px] border border-[#e53e3e55] bg-[#1e0d11] px-4 py-2 text-sm font-semibold text-[#ffc8c8] shadow-whisper transition-colors hover:bg-[#2a1015] hover:text-white md:inline-flex"
+        >
+          <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.907-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </header>
+
+    <main>
+
+      <!-- HERO -->
+      <section class="relative overflow-hidden bg-gradient-to-b from-[#1c0a0f] via-[#130c10] to-[#0d0e12] pb-20 pt-24">
+        <div class="hero-grid pointer-events-none absolute inset-0 opacity-30"></div>
+        <div class="pointer-events-none absolute left-1/2 top-0 h-80 w-80 -translate-x-1/2 rounded-full bg-[#e53e3e28] blur-3xl"></div>
+
+        <div class="relative mx-auto w-full max-w-content px-6 lg:px-10">
+          <div class="mx-auto max-w-3xl text-center reveal-up">
+            <div class="mb-6 inline-flex items-center gap-2 rounded-[5px] border border-[#e53e3e55] bg-[#2d1019] px-3 py-1.5 text-sm font-medium text-[#ffb3b3]">
+              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-logoRed"></span>
+              Open source · Gratis · Tuyo para siempre
+            </div>
+            <h1 class="brand-heading text-5xl font-extrabold leading-[1.1] text-white md:text-6xl lg:text-7xl">
+              Comparte tu app local<br class="hidden sm:block" /> con el mundo.
+            </h1>
+            <p class="mx-auto mt-6 max-w-xl text-xl leading-relaxed text-hcpTextSoft">
+              Un solo comando y tu app tiene una URL pública que cualquiera puede visitar.
+              Sin registros, sin límites, sin que tus datos salgan de tu control.
+            </p>
+            <div class="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <a
+                href="#start"
+                class="focus-ring inline-flex w-full items-center justify-center rounded-[5px] bg-logoRed px-6 py-3 text-base font-bold text-white shadow-whisper transition-colors hover:bg-[#d23535] sm:w-auto"
+              >
+                Empezar en 2 minutos
+              </a>
+              <a
+                href="#how"
+                class="focus-ring inline-flex w-full items-center justify-center gap-2 rounded-[5px] border border-[#e53e3e44] bg-[#1a0d12] px-6 py-3 text-base font-medium text-[#ffcaca] transition-colors hover:bg-[#220f15] sm:w-auto"
+              >
+                Ver cómo funciona
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              </a>
+            </div>
+          </div>
+
+          <!-- Terminal hero -->
+          <div class="mx-auto mt-14 max-w-2xl reveal-up" style="animation-delay:0.18s">
+            <div class="rounded-[8px] border border-[#e53e3e3a] bg-[#0d0e12] shadow-[0_0_40px_rgba(229,62,62,0.1)]">
+              <div class="flex items-center gap-2 border-b border-[#e53e3e22] px-4 py-3">
+                <span class="h-3 w-3 rounded-full bg-[#e53e3e]"></span>
+                <span class="h-3 w-3 rounded-full bg-[#731e25]"></span>
+                <span class="h-3 w-3 rounded-full bg-[#3b1219]"></span>
+                <span class="mono-ui ml-3 text-xs text-hcpGray">terminal</span>
+              </div>
+              <pre class="mono-ui overflow-x-auto p-5 text-sm leading-7"><code><span class="text-hcpGray">$</span> <span class="text-white">./smuf 3000</span>
+
+<span class="text-[#e53e3e] font-semibold">Tunnel ready!</span>
+
+<span class="text-hcpGray">Local  </span> <span class="text-hcpTextSoft">→</span> <span class="text-hcpTextSoft">http://localhost:3000</span>
+<span class="text-hcpGray">Public </span> <span class="text-hcpTextSoft">→</span> <span class="text-[#ff8f8f] font-medium">https://a3f1c9.tudominio.com</span>
+
+<span class="text-hcpGray">Ctrl+C para detener</span></code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3 VALORES -->
+      <section id="values" class="bg-[#0f0b0d] py-20">
+        <div class="mx-auto w-full max-w-content px-6 lg:px-10">
+          <div class="grid gap-6 md:grid-cols-3">
+
+            <article class="rounded-[8px] border border-[#e53e3e3a] bg-[#160d11] p-8 shadow-whisper">
+              <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#e53e3e44] bg-[#2a0f14]">
+                <svg class="h-6 w-6" fill="none" stroke="#e53e3e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                </svg>
+              </div>
+              <h3 class="brand-heading text-2xl font-extrabold text-white">Fácil</h3>
+              <p class="mt-3 text-base leading-relaxed text-hcpTextSoft">
+                Un solo comando: <code class="mono-ui rounded bg-[#0d0e12] px-1.5 py-0.5 text-sm text-[#ff9f9f]">./smuf 3000</code>
+                y recibes al instante una URL que cualquier persona puede visitar. Sin configuraciones raras.
+              </p>
+            </article>
+
+            <article class="rounded-[8px] border border-[#e53e3e3a] bg-[#160d11] p-8 shadow-whisper">
+              <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#e53e3e44] bg-[#2a0f14]">
+                <svg class="h-6 w-6" fill="none" stroke="#e53e3e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+              </div>
+              <h3 class="brand-heading text-2xl font-extrabold text-white">Rápido</h3>
+              <p class="mt-3 text-base leading-relaxed text-hcpTextSoft">
+                Tu URL está lista en segundos. Sin esperas, sin verificaciones de correo, sin planes de precios.
+                Ejecutas, compartes, listo.
+              </p>
+            </article>
+
+            <article class="rounded-[8px] border border-[#e53e3e3a] bg-[#160d11] p-8 shadow-whisper">
+              <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#e53e3e44] bg-[#2a0f14]">
+                <svg class="h-6 w-6" fill="none" stroke="#e53e3e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+              </div>
+              <h3 class="brand-heading text-2xl font-extrabold text-white">Seguro</h3>
+              <p class="mt-3 text-base leading-relaxed text-hcpTextSoft">
+                El tráfico va a <strong class="text-white font-semibold">tu propio servidor</strong>, no al de nadie más.
+                Tus datos nunca pasan por manos de terceros. HTTPS incluido.
+              </p>
+            </article>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- CÓMO FUNCIONA -->
+      <section id="how" class="bg-[#0d0e12] py-20">
+        <div class="mx-auto w-full max-w-content px-6 lg:px-10">
+          <div class="mx-auto max-w-2xl text-center">
+            <p class="brand-heading text-[13px] font-semibold uppercase tracking-[1.3px] text-hcpGray">cómo funciona</p>
+            <h2 class="brand-heading mt-3 text-4xl font-extrabold leading-[1.15] text-white md:text-5xl">
+              Tu app viaja segura de tu ordenador al mundo.
+            </h2>
+            <p class="mt-4 text-lg leading-relaxed text-hcpTextSoft">
+              smuf hace de puente entre tu máquina y tu servidor. Así el tráfico llega a ti sin pasar por nadie.
+            </p>
+          </div>
+
+          <div class="tunnel-wrap mx-auto mt-12 max-w-3xl border border-[#e53e3e38]">
+            <div style="display:flex;align-items:center;width:100%;">
+              <div class="flow-node">
+                <div class="flow-node-icon">
+                  <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                </div>
+                <span class="flow-node-label">Tu ordenador</span>
+                <span class="flow-node-sub">localhost:3000</span>
+              </div>
+              <div class="flow-track">
+                <span class="flow-packet"></span>
+                <span class="flow-packet"></span>
+                <span class="flow-packet"></span>
+              </div>
+              <div class="flow-node">
+                <div class="flow-node-icon" style="border-color:rgba(229,62,62,0.75);background:#2a0f14;box-shadow:0 0 20px rgba(229,62,62,0.25);">
+                  <svg viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+                </div>
+                <span class="flow-node-label">Tu servidor</span>
+                <span class="flow-node-sub">smuf-server</span>
+              </div>
+              <div class="flow-track">
+                <span class="flow-packet"></span>
+                <span class="flow-packet"></span>
+                <span class="flow-packet"></span>
+              </div>
+              <div class="flow-node">
+                <div class="flow-node-icon">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </div>
+                <span class="flow-node-label">Cualquier persona</span>
+                <span class="flow-node-sub">a3f1c9.tudominio.com</span>
+              </div>
+            </div>
+            <div class="mono-ui mt-6 inline-flex items-center gap-2 rounded-[4px] bg-[#0d0e12cc] px-2.5 py-1 text-[11px] text-[#f0a9a9]">
+              <span style="width:6px;height:6px;border-radius:9999px;background:#e53e3e;display:inline-block;box-shadow:0 0 6px #e53e3e;animation:pulse 2s infinite;"></span>
+              Conexión activa y cifrada
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- QUICK START -->
+      <section id="start" class="bg-[#0f0b0d] py-20">
+        <div class="mx-auto w-full max-w-content px-6 lg:px-10">
+          <div class="mx-auto max-w-2xl text-center">
+            <p class="brand-heading text-[13px] font-semibold uppercase tracking-[1.3px] text-hcpGray">empezar</p>
+            <h2 class="brand-heading mt-3 text-4xl font-extrabold leading-[1.15] text-white md:text-5xl">
+              En marcha en menos de 2 minutos.
+            </h2>
+          </div>
+
+          <div class="mx-auto mt-12 grid max-w-3xl gap-5">
+
+            <div class="flex gap-5 rounded-[8px] border border-[#e53e3e38] bg-[#160d11] p-6 shadow-whisper">
+              <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-logoRed text-sm font-extrabold text-white">1</div>
+              <div class="flex-1">
+                <h3 class="brand-heading text-lg font-bold text-white">Instala smuf en tu servidor</h3>
+                <p class="mt-1 text-sm leading-relaxed text-hcpTextSoft">Descarga y compila. Solo necesitas tener Go instalado.</p>
+                <pre class="mono-ui mt-3 overflow-x-auto rounded-[5px] bg-[#0d0e12] px-4 py-3 text-sm text-hcpTextDark"><code>git clone https://github.com/cdrusu/smuf.git
+cd smuf &amp;&amp; go build -o smuf-server ./cmd/smuf-server
+./smuf-server</code></pre>
+              </div>
+            </div>
+
+            <div class="flex gap-5 rounded-[8px] border border-[#e53e3e38] bg-[#160d11] p-6 shadow-whisper">
+              <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-logoRed text-sm font-extrabold text-white">2</div>
+              <div class="flex-1">
+                <h3 class="brand-heading text-lg font-bold text-white">Compila el cliente en tu ordenador</h3>
+                <p class="mt-1 text-sm leading-relaxed text-hcpTextSoft">Un solo ejecutable, sin dependencias adicionales.</p>
+                <pre class="mono-ui mt-3 overflow-x-auto rounded-[5px] bg-[#0d0e12] px-4 py-3 text-sm text-hcpTextDark"><code>go build -o smuf ./cmd/smuf</code></pre>
+              </div>
+            </div>
+
+            <div class="flex gap-5 rounded-[8px] border border-[#e53e3e55] bg-[#1e0d12] p-6 shadow-[0_0_24px_rgba(229,62,62,0.1)]">
+              <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-logoRed text-sm font-extrabold text-white">3</div>
+              <div class="flex-1">
+                <h3 class="brand-heading text-lg font-bold text-white">¡Abre tu túnel!</h3>
+                <p class="mt-1 text-sm leading-relaxed text-hcpTextSoft">Dile a smuf el puerto donde corre tu app. Eso es todo.</p>
+                <pre class="mono-ui mt-3 overflow-x-auto rounded-[5px] bg-[#0d0e12] px-4 py-3 text-sm text-hcpTextDark"><code>SMUF_SERVER=tuservidor.com:7000 ./smuf 3000
+
+<span class="text-[#e53e3e]">→</span> https://a3f1c9.tuservidor.com  <span class="text-hcpGray"># comparte este enlace</span></code></pre>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="border-t border-[#e53e3e22] bg-[#0a0608]">
+      <div class="mx-auto flex w-full max-w-content flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-hcpGray md:flex-row lg:px-10">
+        <div class="flex items-center gap-3">
+          <img src="logo.svg" alt="smuf" class="h-7 w-7 opacity-80" />
+          <div class="flex flex-col leading-tight">
+            <span class="brand-heading text-base font-extrabold text-white">smuf</span>
+            <span class="text-xs text-hcpGray">product by cdrusu</span>
+          </div>
+        </div>
+        <a href="https://github.com/cdrusu/smuf" target="_blank" class="focus-ring rounded-sm text-[#ff8f8f] transition-colors hover:text-white hover:underline">
+          github.com/cdrusu/smuf
+        </a>
+      </div>
+    </footer>
+
+  </body>
+</html>

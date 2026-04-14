@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 160" width="256" height="160" role="img" aria-label="Nube roja minimalista">
+  <g fill="none" fill-rule="evenodd">
+    <!-- sombra sutil -->
+    <ellipse cx="128" cy="128" rx="72" ry="10" fill="#00000014"/>
+
+    <!-- nube principal -->
+    <path
+      d="M82 112
+         H170
+         C188 112 202 99 202 83
+         C202 68 190 56 174 55
+         C168 39 153 28 136 28
+         C116 28 99 42 94 61
+         C92 61 89 60 86 60
+         C67 60 52 74 52 92
+         C52 103 58 112 82 112Z"
+      fill="#E53935"/>
+
+    <!-- bulto delantero estilo minimal -->
+    <path
+      d="M182 112
+         H210
+         C222 112 232 103 232 91
+         C232 79 222 70 210 70
+         C203 70 197 73 192 79
+         C191 79 190 79 189 79
+         C179 79 171 87 171 96
+         C171 105 176 112 182 112Z"
+      fill="#C62828"/>
+
+    <!-- brillo -->
+    <path
+      d="M104 52
+         C113 42 126 37 140 39
+         C126 41 114 48 107 58
+         C105 61 101 60 99 58
+         C97 56 98 54 104 52Z"
+      fill="#FFFFFF22"/>
+  </g>
+</svg>
