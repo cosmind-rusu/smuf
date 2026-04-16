@@ -57,43 +57,69 @@ Eso genera dos ejecutables:
 
 ## Uso rápido
 
-### PASO 1 — Levanta el servidor (una sola vez)
+### Opción A: Wizard interactivo (recomendado para empezar)
+
+Simplemente ejecuta sin argumentos y el wizard te guía:
 
 ```bash
+# En tu servidor
 ./smuf-server
 ```
 
 ```
-[2026-04-13 12:00:00] INFO  smuf-server ready | control :7000 | http :8080 | domain localhost
-[2026-04-13 12:00:00] INFO  http proxy listening on :8080
+  🚀 Bienvenido a smuf-server
+  ─────────────────────────────
+  Vamos a configurar tu servidor en unos simples pasos.
+
+? ¿Cuál es tu dominio? tudominio.com
+? ¿Generar un token de autenticación automáticamente? Sí
+  ✓ Token generado: a1b2c3d4...
+? ¿Activar HTTPS automático con Let's Encrypt? Sí
+? ¿Guardar configuración en archivo .env? Sí
+  ✓ Configuración guardada en .env
 ```
 
-Para producción con HTTPS automático:
+En tu ordenador, lo mismo:
 
 ```bash
-SMUF_DOMAIN=tudominio.com \
-SMUF_HTTP_PORT=80 \
-SMUF_HTTPS=true \
-SMUF_HTTPS_PORT=443 \
-SMUF_ACME_EMAIL=tu@email.com \
-./smuf-server
+./smuf --setup
 ```
 
-Necesitas apuntar `*.tudominio.com` al servidor y tener los puertos públicos `80` y `443` accesibles. Let's Encrypt usa el puerto `80` para validar el dominio y smuf redirige el tráfico normal a HTTPS.
+```
+  🚀 Bienvenido a smuf
+  ─────────────────────
+  Vamos a conectarte a tu servidor.
 
-### PASO 2 — Abre un túnel desde tu máquina
+? ¿Dirección de tu servidor smuf? tudominio.com:7000
+? Token de autenticación: a1b2c3d4...
+? ¿Guardar configuración en archivo .env? Sí
+```
 
-Con tu app corriendo en `localhost:3000`:
+Después de configurar, solo necesitas:
 
 ```bash
 ./smuf 3000
 ```
 
+### Opción B: Comando directo con variables de entorno
+
+Si prefieres un solo comando:
+
+```bash
+# Servidor
+SMUF_DOMAIN=tudominio.com SMUF_AUTH_TOKEN=mi-token ./smuf-server
+
+# Cliente
+SMUF_SERVER=tudominio.com:7000 SMUF_AUTH_TOKEN=mi-token ./smuf 3000
+```
+
+### Resultado
+
 ```
   Tunnel ready!
 
   Local   → http://localhost:3000
-  Public  → http://a3f1c9.localhost:8080
+  Public  → https://a3f1c9b2d4e6f8a1.tudominio.com
 
   Press Ctrl+C to stop
 ```
@@ -119,14 +145,11 @@ Sin archivos de config. Todo por variables de entorno:
 | `SMUF_ACME_CACHE` | `certs` | Carpeta donde se guardan los certificados ACME |
 | `SMUF_PUBLIC_HTTP_PORT` | *(vacío)* | Puerto HTTP que se anuncia si difiere del puerto local |
 | `SMUF_PUBLIC_HTTPS_PORT` | *(vacío)* | Puerto HTTPS que se anuncia si difiere del puerto local |
+| `SMUF_AUTH_TOKEN` | *(vacío)* | Token secreto para autenticar clientes (recomendado en producción) |
+| `SMUF_MAX_CONNS_PER_IP` | `5` | Máximo de túneles simultáneos por IP |
+| `SMUF_HANDSHAKE_TIMEOUT` | `10s` | Tiempo límite para completar el handshake |
 
-```bash
-SMUF_DOMAIN=tudominio.com SMUF_HTTP_PORT=80 ./smuf-server
-```
-
-Con HTTPS activo, `SMUF_HTTP_PORT` queda reservado para los challenges de Let's Encrypt y redirecciones. El proxy de túneles escucha en `SMUF_HTTPS_PORT`.
-
-Si el binario escucha en puertos internos detrás de un proxy o contenedor, usa `SMUF_PUBLIC_HTTP_PORT` y `SMUF_PUBLIC_HTTPS_PORT` para que la URL mostrada al cliente use los puertos públicos correctos.
+También puedes forzar el wizard con `./smuf-server --setup`.
 
 ### Cliente (`smuf`)
 
@@ -134,9 +157,16 @@ Si el binario escucha en puertos internos detrás de un proxy o contenedor, usa 
 |---|---|---|
 | `SMUF_SERVER` | `localhost:7000` | Dirección de tu servidor |
 | `SMUF_HTTP_PORT` | `8080` | Puerto HTTP del servidor cuando se conecta a un servidor antiguo que no devuelve URL pública |
+| `SMUF_AUTH_TOKEN` | *(vacío)* | Token de autenticación (debe coincidir con el del servidor) |
 
 ```bash
 SMUF_SERVER=tudominio.com:7000 ./smuf 3000
+```
+
+Si el servidor requiere autenticación:
+
+```bash
+SMUF_SERVER=tudominio.com:7000 SMUF_AUTH_TOKEN=mi-token-secreto ./smuf 3000
 ```
 
 ---
@@ -174,12 +204,12 @@ SMUF_SERVER=tudominio.com:7000 ./smuf 3000
 Funcionalidades planeadas — contribuciones bienvenidas:
 
 - [x] **HTTPS** — TLS automático con Let's Encrypt
-- [ ] **Autenticación por token** — control de quién puede abrir túneles
+- [x] **Autenticación por token** — control de quién puede abrir túneles
+- [x] **Rate limiting** — protege tu servidor de abuso (límite por IP)
 - [ ] **Subdominio personalizado** — `miapp.tudominio.com` en lugar de un ID aleatorio
 - [ ] **WebSockets** — soporte para apps en tiempo real
 - [ ] **Dashboard web** — ver túneles activos desde el navegador
 - [ ] **Múltiples túneles por cliente** — un proceso, varios puertos
-- [ ] **Rate limiting** — protege tu servidor de abuso
 - [ ] **Túneles TCP** — no solo HTTP, cualquier protocolo
 - [ ] **Imagen Docker oficial** — despliegue en un comando
 - [ ] **Binarios pre-compilados** — sin necesidad de tener Go instalado
@@ -200,6 +230,70 @@ smuf/
     └── logger/
         └── logger.go   # Info / Error / Fatal con timestamp
 ```
+
+---
+
+## Seguridad
+
+### Archivo .env (recomendado)
+
+La forma más fácil de configurar smuf es con un archivo `.env`. Crea el archivo junto al ejecutable:
+
+**Servidor** (`.env` en tu VPS):
+```env
+# Obligatorio en producción
+SMUF_DOMAIN=tudominio.com
+SMUF_AUTH_TOKEN=pon-aqui-un-token-secreto-largo
+
+# Opcional - descomentar para HTTPS automático
+# SMUF_HTTPS=true
+# SMUF_HTTP_PORT=80
+# SMUF_HTTPS_PORT=443
+# SMUF_ACME_EMAIL=tu@email.com
+```
+
+**Cliente** (`.env` en tu ordenador):
+```env
+SMUF_SERVER=tudominio.com:7000
+SMUF_AUTH_TOKEN=pon-aqui-el-mismo-token-del-servidor
+```
+
+Luego ejecuta normalmente:
+```bash
+# En el servidor
+./smuf-server
+
+# En tu ordenador
+./smuf 3000
+```
+
+> 💡 **Tip:** Genera un token seguro con `openssl rand -hex 32`
+
+### Autenticación
+
+Sin token configurado, cualquier persona que conozca la dirección de tu servidor podría crear túneles. **Siempre usa `SMUF_AUTH_TOKEN` en producción.**
+
+### Rate Limiting
+
+El servidor limita el número de túneles simultáneos por IP (default: 5). Configurable con `SMUF_MAX_CONNS_PER_IP`.
+
+### Timeouts
+
+- **Handshake:** 10 segundos (configurable con `SMUF_HANDSHAKE_TIMEOUT`)
+- **HTTP Read:** 30 segundos
+- **HTTP Write:** 60 segundos
+- **HTTP Idle:** 120 segundos
+
+### IDs de Túnel
+
+Los IDs usan 128 bits de entropía (32 caracteres hex), generados con `crypto/rand`. Son prácticamente imposibles de adivinar.
+
+### Recomendaciones
+
+1. **Siempre usa `SMUF_AUTH_TOKEN`** en producción
+2. **Activa HTTPS** con `SMUF_HTTPS=true` para cifrar el tráfico público
+3. **Usa un firewall** para restringir el puerto de control (7000) solo a IPs conocidas si es posible
+4. **Monitorea los logs** para detectar actividad sospechosa
 
 ---
 

@@ -1,3 +1,25 @@
+# IDE y configuración local
 /.claude
 /.windsurf
+
+# Binarios compilados
+smuf
+smuf.exe
+smuf-server
+smuf-server.exe
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Configuración local (contiene tokens secretos)
+.env
+.env.*
+
+# Certificados ACME/Let's Encrypt
 /certs
+
+# Archivos temporales
+*.log
+*.tmp
+ascii-art.txt

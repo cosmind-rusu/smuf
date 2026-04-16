@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -12,20 +13,68 @@ import (
 	"time"
 
 	"github.com/cdrusu/smuf/internal/tunnel"
+	"github.com/cdrusu/smuf/internal/wizard"
 	"github.com/hashicorp/yamux"
 )
 
 const defaultServer = "localhost:7000"
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: smuf <port>")
-		fmt.Println("Example: smuf 3000")
-		os.Exit(1)
+	// Flags
+	showHelp := flag.Bool("h", false, "Mostrar ayuda")
+	showVersion := flag.Bool("v", false, "Mostrar versión")
+	setupMode := flag.Bool("setup", false, "Ejecutar wizard de configuración")
+	flag.Parse()
+
+	if *showHelp {
+		printClientHelp()
+		return
+	}
+	if *showVersion {
+		fmt.Println("smuf v0.2.0")
+		return
 	}
 
-	port := os.Args[1]
+	// Cargar .env si existe
+	wizard.LoadEnvFile()
+
+	// Detectar si necesitamos wizard de configuración
+	needsSetup := *setupMode || (os.Getenv("SMUF_SERVER") == "" && os.Getenv("SMUF_SERVER") != defaultServer && isInteractive() && flag.NArg() == 0)
+
+	if needsSetup {
+		wizCfg, err := wizard.RunClientWizard()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\nError: %v\n", err)
+			os.Exit(1)
+		}
+		if wizCfg.Server != "" {
+			os.Setenv("SMUF_SERVER", wizCfg.Server)
+		}
+		if wizCfg.AuthToken != "" {
+			os.Setenv("SMUF_AUTH_TOKEN", wizCfg.AuthToken)
+		}
+		fmt.Println()
+	}
+
+	// Obtener el puerto
+	var port string
+	if flag.NArg() >= 1 {
+		port = flag.Arg(0)
+	} else {
+		// Preguntar por el puerto si no se dio
+		if isInteractive() {
+			fmt.Print("  Puerto de tu app local: ")
+			fmt.Scanln(&port)
+		}
+		if port == "" {
+			fmt.Println("Uso: smuf <puerto>")
+			fmt.Println("Ejemplo: smuf 3000")
+			os.Exit(1)
+		}
+	}
+
 	serverAddr := envOr("SMUF_SERVER", defaultServer)
+	authToken := os.Getenv("SMUF_AUTH_TOKEN")
 
 	conn, err := dialWithRetry(serverAddr, 5, 2*time.Second)
 	if err != nil {
@@ -35,7 +84,11 @@ func main() {
 	}
 
 	// --- Handshake ---
-	fmt.Fprintf(conn, "PORT %s\n", port)
+	if authToken != "" {
+		fmt.Fprintf(conn, "AUTH %s PORT %s\n", authToken, port)
+	} else {
+		fmt.Fprintf(conn, "PORT %s\n", port)
+	}
 
 	reader := bufio.NewReader(conn)
 	line, err := reader.ReadString('\n')
@@ -117,6 +170,33 @@ func proxyToLocal(stream net.Conn, port string) {
 	go func() { io.Copy(local, stream); done <- struct{}{} }()
 	go func() { io.Copy(stream, local); done <- struct{}{} }()
 	<-done
+}
+
+func printClientHelp() {
+	fmt.Println(`smuf - Cliente de túneles HTTP
+
+Uso:
+  smuf <puerto>            Abre un túnel para localhost:<puerto>
+  smuf --setup             Configurar conexión al servidor
+  smuf -h                  Mostrar esta ayuda
+
+Ejemplos:
+  smuf 3000                Exponer localhost:3000
+  smuf 8080                Exponer localhost:8080
+
+Variables de entorno:
+  SMUF_SERVER              Dirección del servidor (ej: tudominio.com:7000)
+  SMUF_AUTH_TOKEN          Token de autenticación
+
+Puedes crear un archivo .env junto al ejecutable con estas variables.`)
+}
+
+func isInteractive() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 func printBanner(port, publicURL string) {
