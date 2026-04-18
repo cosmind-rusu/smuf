@@ -3,10 +3,10 @@
 /.windsurf
 
 # Binarios compilados
-smuf
-smuf.exe
-smuf-server
-smuf-server.exe
+/smuf
+/smuf.exe
+/smuf-server
+/smuf-server.exe
 *.exe
 *.dll
 *.so

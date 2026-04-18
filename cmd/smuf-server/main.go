@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -37,7 +38,7 @@ func main() {
 		return
 	}
 	if *showVersion {
-		fmt.Println("smuf-server v0.2.0")
+		fmt.Println("smuf-server v0.3.0")
 		return
 	}
 
@@ -297,7 +298,13 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 		return
 	}
 
-	registry.Add(id, session)
+	registry.Add(id, &tunnel.TunnelEntry{
+		Session:   session,
+		Port:      localPort,
+		PublicURL: publicURL,
+		ClientIP:  extractIP(conn.RemoteAddr().String()),
+		CreatedAt: time.Now(),
+	})
 	logger.Info("[%s] tunnel open → local port %s | public %s", id, localPort, publicURL)
 
 	defer func() {
@@ -408,6 +415,12 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host = h
 	}
 
+	// Dashboard: petición al dominio raíz (no a un subdominio de túnel)
+	if host == p.domain {
+		p.serveDashboard(w, r)
+		return
+	}
+
 	suffix := "." + p.domain
 	if !strings.HasSuffix(host, suffix) {
 		http.Error(w, "bad request: missing tunnel subdomain", http.StatusBadRequest)
@@ -415,14 +428,14 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	id := strings.TrimSuffix(host, suffix)
 
-	session, ok := p.registry.Get(id)
+	entry, ok := p.registry.Get(id)
 	if !ok {
 		http.Error(w, "tunnel unavailable", http.StatusNotFound)
 		return
 	}
 
 	// Abrimos un stream yamux para esta petición concreta
-	stream, err := session.Open()
+	stream, err := entry.Session.Open()
 	if err != nil {
 		http.Error(w, "tunnel unavailable", http.StatusBadGateway)
 		logger.Error("[%s] open stream: %v", id, err)
@@ -453,6 +466,95 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
 }
+
+func (p *httpProxy) serveDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/_smuf/tunnels" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		json.NewEncoder(w).Encode(p.registry.List())
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, dashboardHTML)
+}
+
+const dashboardHTML = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>smuf · dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen font-mono">
+  <div class="max-w-3xl mx-auto px-6 py-12">
+    <div class="flex items-baseline gap-3 mb-10">
+      <span class="text-red-500 font-bold text-xl">smuf</span>
+      <span class="text-gray-600 text-sm">dashboard</span>
+    </div>
+    <div class="flex items-center justify-between mb-3">
+      <span class="text-xs text-gray-500 uppercase tracking-widest">Túneles activos</span>
+      <span id="count" class="text-xs text-gray-600"></span>
+    </div>
+    <div id="tunnels" class="space-y-2">
+      <p class="text-gray-700 text-sm py-4">Cargando&#8230;</p>
+    </div>
+    <div class="mt-10 flex items-center gap-4 text-xs text-gray-700">
+      <span>Actualiza cada 5 s</span>
+      <span>&#183;</span>
+      <a href="/_smuf/tunnels" class="hover:text-gray-400 transition-colors">JSON API</a>
+    </div>
+  </div>
+  <script>
+    function ago(iso) {
+      var s = Math.floor((Date.now() - new Date(iso)) / 1000);
+      if (s < 60) return s + 's';
+      if (s < 3600) return Math.floor(s/60) + 'm';
+      var h = Math.floor(s/3600);
+      return h + 'h ' + Math.floor((s%3600)/60) + 'm';
+    }
+    function render(tunnels) {
+      var count = document.getElementById('count');
+      var container = document.getElementById('tunnels');
+      if (!tunnels || tunnels.length === 0) {
+        count.textContent = '';
+        container.innerHTML = '<p class="text-gray-700 text-sm py-4">No hay t&#250;neles activos.</p>';
+        return;
+      }
+      count.textContent = tunnels.length + ' activo' + (tunnels.length === 1 ? '' : 's');
+      var html = '';
+      for (var i = 0; i < tunnels.length; i++) {
+        var t = tunnels[i];
+        html += '<div class="border border-gray-800 rounded-lg p-4 flex items-start justify-between gap-6 bg-gray-900">';
+        html +=   '<div class="flex-1 min-w-0">';
+        html +=     '<div class="flex items-center gap-2 mb-2">';
+        html +=       '<span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0 inline-block"></span>';
+        html +=       '<code class="text-gray-500 text-xs">' + t.id.slice(0,8) + '&#8230;</code>';
+        html +=       '<span class="text-gray-700 text-xs">hace ' + ago(t.created_at) + '</span>';
+        html +=     '</div>';
+        html +=     '<a href="' + t.public_url + '" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300 text-sm block transition-colors">' + t.public_url + '</a>';
+        html +=   '</div>';
+        html +=   '<div class="text-right text-xs text-gray-600 shrink-0">';
+        html +=     '<div>:' + t.port + '</div>';
+        html +=     '<div>' + t.client_ip + '</div>';
+        html +=   '</div>';
+        html += '</div>';
+      }
+      container.innerHTML = html;
+    }
+    function refresh() {
+      fetch('/_smuf/tunnels')
+        .then(function(r) { return r.json(); })
+        .then(render)
+        .catch(function() {
+          document.getElementById('tunnels').innerHTML = '<p class="text-red-500 text-sm py-4">Error al contactar el servidor.</p>';
+        });
+    }
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>`
 
 func newID() (string, error) {
 	b := make([]byte, 16) // 128 bits de entropía

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -31,7 +32,7 @@ func main() {
 		return
 	}
 	if *showVersion {
-		fmt.Println("smuf v0.2.0")
+		fmt.Println("smuf v0.3.0")
 		return
 	}
 
@@ -56,19 +57,23 @@ func main() {
 		fmt.Println()
 	}
 
-	// Obtener el puerto
-	var port string
+	// Obtener puertos
+	var ports []string
 	if flag.NArg() >= 1 {
-		port = flag.Arg(0)
+		ports = flag.Args()
 	} else {
-		// Preguntar por el puerto si no se dio
 		if isInteractive() {
+			var port string
 			fmt.Print("  Puerto de tu app local: ")
 			fmt.Scanln(&port)
+			if port != "" {
+				ports = []string{port}
+			}
 		}
-		if port == "" {
-			fmt.Println("Uso: smuf <puerto>")
+		if len(ports) == 0 {
+			fmt.Println("Uso: smuf <puerto> [puerto2 ...]")
 			fmt.Println("Ejemplo: smuf 3000")
+			fmt.Println("         smuf 3000 4000 5000")
 			os.Exit(1)
 		}
 	}
@@ -76,14 +81,77 @@ func main() {
 	serverAddr := envOr("SMUF_SERVER", defaultServer)
 	authToken := os.Getenv("SMUF_AUTH_TOKEN")
 
-	conn, err := dialWithRetry(serverAddr, 5, 2*time.Second)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "\nError: cannot reach smuf-server at %s\n", serverAddr)
-		fmt.Fprintf(os.Stderr, "Tip: set SMUF_SERVER=host:port if using a custom server\n")
-		os.Exit(1)
+	type tunnelResult struct {
+		port      string
+		publicURL string
+		session   *yamux.Session
+		err       error
 	}
 
-	// --- Handshake ---
+	results := make([]tunnelResult, len(ports))
+	var wg sync.WaitGroup
+	for i, p := range ports {
+		wg.Add(1)
+		go func(idx int, port string) {
+			defer wg.Done()
+			sess, url, err := connectTunnel(serverAddr, authToken, port)
+			results[idx] = tunnelResult{port: port, publicURL: url, session: sess, err: err}
+		}(i, p)
+	}
+	wg.Wait()
+
+	fmt.Println()
+	anyOK := false
+	if len(ports) == 1 {
+		r := results[0]
+		if r.err != nil {
+			fmt.Fprintf(os.Stderr, "  Error: %v\n", r.err)
+			os.Exit(1)
+		}
+		fmt.Println("  Tunnel ready!")
+		fmt.Println()
+		fmt.Printf("  Local   → http://localhost:%s\n", r.port)
+		fmt.Printf("  Public  → %s\n", r.publicURL)
+		anyOK = true
+	} else {
+		fmt.Println("  Tunnels ready!")
+		fmt.Println()
+		for _, r := range results {
+			if r.err != nil {
+				fmt.Fprintf(os.Stderr, "  ✗ :%s — %v\n", r.port, r.err)
+			} else {
+				fmt.Printf("  localhost:%-6s  →  %s\n", r.port, r.publicURL)
+				anyOK = true
+			}
+		}
+	}
+	if !anyOK {
+		os.Exit(1)
+	}
+	fmt.Println()
+	fmt.Println("  Press Ctrl+C to stop")
+	fmt.Println()
+
+	for _, r := range results {
+		if r.session != nil {
+			go serveStreams(r.session, r.port)
+		}
+	}
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	fmt.Println("\nTunnel closed.")
+}
+
+// connectTunnel establece un único túnel al servidor para el puerto dado.
+func connectTunnel(serverAddr, authToken, port string) (*yamux.Session, string, error) {
+	conn, err := dialWithRetry(serverAddr, 5, 2*time.Second)
+	if err != nil {
+		return nil, "", fmt.Errorf("cannot reach smuf-server at %s", serverAddr)
+	}
+
 	if authToken != "" {
 		fmt.Fprintf(conn, "AUTH %s PORT %s\n", authToken, port)
 	} else {
@@ -93,20 +161,20 @@ func main() {
 	reader := bufio.NewReader(conn)
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: handshake failed: %v\n", err)
-		os.Exit(1)
+		conn.Close()
+		return nil, "", fmt.Errorf("handshake failed: %v", err)
 	}
 
 	line = strings.TrimSpace(line)
 	if !strings.HasPrefix(line, "OK ") {
-		fmt.Fprintf(os.Stderr, "Error: server rejected: %s\n", line)
-		os.Exit(1)
+		conn.Close()
+		return nil, "", fmt.Errorf("server rejected: %s", line)
 	}
 
 	fields := strings.Fields(line)
 	if len(fields) < 2 {
-		fmt.Fprintf(os.Stderr, "Error: invalid server response: %s\n", line)
-		os.Exit(1)
+		conn.Close()
+		return nil, "", fmt.Errorf("invalid server response: %s", line)
 	}
 
 	id := fields[1]
@@ -115,14 +183,11 @@ func main() {
 		publicURL = fields[2]
 	}
 
-	// --- Upgrade a yamux ---
-	// Usamos BufConn para que los bytes ya bufferizados del handshake no se pierdan
 	session, err := yamux.Client(tunnel.NewBufConn(conn, reader), yamux.DefaultConfig())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: yamux failed: %v\n", err)
-		os.Exit(1)
+		conn.Close()
+		return nil, "", fmt.Errorf("yamux failed: %v", err)
 	}
-	defer session.Close()
 
 	if publicURL == "" {
 		serverHost := strings.Split(serverAddr, ":")[0]
@@ -130,16 +195,7 @@ func main() {
 		publicURL = fmt.Sprintf("http://%s.%s:%s", id, serverHost, httpPort)
 	}
 
-	printBanner(port, publicURL)
-
-	// Aceptamos streams que el servidor nos envía (uno por petición HTTP entrante)
-	go serveStreams(session, port)
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	fmt.Println("\nTunnel closed.")
+	return session, publicURL, nil
 }
 
 // serveStreams acepta yamux streams y los proxea a la app local en segundo plano.
@@ -177,12 +233,13 @@ func printClientHelp() {
 
 Uso:
   smuf <puerto>            Abre un túnel para localhost:<puerto>
+  smuf <p1> <p2> ...       Múltiples túneles en un solo comando
   smuf --setup             Configurar conexión al servidor
   smuf -h                  Mostrar esta ayuda
 
 Ejemplos:
   smuf 3000                Exponer localhost:3000
-  smuf 8080                Exponer localhost:8080
+  smuf 3000 4000 5000      Tres túneles simultáneos
 
 Variables de entorno:
   SMUF_SERVER              Dirección del servidor (ej: tudominio.com:7000)
@@ -197,17 +254,6 @@ func isInteractive() bool {
 		return false
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
-}
-
-func printBanner(port, publicURL string) {
-	fmt.Println()
-	fmt.Println("  Tunnel ready!")
-	fmt.Println()
-	fmt.Printf("  Local   → http://localhost:%s\n", port)
-	fmt.Printf("  Public  → %s\n", publicURL)
-	fmt.Println()
-	fmt.Println("  Press Ctrl+C to stop")
-	fmt.Println()
 }
 
 func envOr(key, fallback string) string {

@@ -55,6 +55,18 @@ Eso genera dos ejecutables:
 
 ---
 
+## Dashboard
+
+Cuando el servidor está corriendo, abre en el navegador:
+
+```
+http://tudominio.com:8080/
+```
+
+Verás todos los túneles activos con su URL pública, puerto local, IP del cliente y tiempo activo. Se actualiza cada 5 segundos.
+
+---
+
 ## Uso rápido
 
 ### Opción A: Wizard interactivo (recomendado para empezar)
@@ -99,6 +111,9 @@ Después de configurar, solo necesitas:
 
 ```bash
 ./smuf 3000
+
+# O varios puertos a la vez
+./smuf 3000 4000 5000
 ```
 
 ### Opción B: Comando directo con variables de entorno
@@ -208,8 +223,8 @@ Funcionalidades planeadas — contribuciones bienvenidas:
 - [x] **Rate limiting** — protege tu servidor de abuso (límite por IP)
 - [ ] **Subdominio personalizado** — `miapp.tudominio.com` en lugar de un ID aleatorio
 - [ ] **WebSockets** — soporte para apps en tiempo real
-- [ ] **Dashboard web** — ver túneles activos desde el navegador
-- [ ] **Múltiples túneles por cliente** — un proceso, varios puertos
+- [x] **Dashboard web** — ver túneles activos desde el navegador
+- [x] **Múltiples túneles por cliente** — un proceso, varios puertos
 - [ ] **Túneles TCP** — no solo HTTP, cualquier protocolo
 - [ ] **Imagen Docker oficial** — despliegue en un comando
 - [ ] **Binarios pre-compilados** — sin necesidad de tener Go instalado
