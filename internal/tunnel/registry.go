@@ -55,6 +55,14 @@ func (r *Registry) Remove(id string) {
 	r.mu.Unlock()
 }
 
+// Has reports whether an ID is already registered.
+func (r *Registry) Has(id string) bool {
+	r.mu.RLock()
+	_, ok := r.entries[id]
+	r.mu.RUnlock()
+	return ok
+}
+
 // List returns a snapshot of all active tunnel metadata.
 func (r *Registry) List() []TunnelInfo {
 	r.mu.RLock()

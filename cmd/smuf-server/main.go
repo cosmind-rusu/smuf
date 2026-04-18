@@ -260,7 +260,7 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 		parts = parts[2:] // Quitar AUTH <token>, dejar PORT <puerto>
 	}
 
-	if len(parts) != 2 || parts[0] != "PORT" {
+	if len(parts) < 2 || parts[0] != "PORT" {
 		fmt.Fprintf(conn, "ERR invalid handshake\n")
 		conn.Close()
 		return
@@ -275,15 +275,36 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 		return
 	}
 
+	// Subdominio personalizado: PORT <port> SUB <name>
+	requestedSub := ""
+	if len(parts) == 4 && parts[2] == "SUB" {
+		requestedSub = strings.ToLower(parts[3])
+		if !isValidSubdomain(requestedSub) {
+			fmt.Fprintf(conn, "ERR invalid subdomain: solo letras, números y guiones (1-63 chars)\n")
+			conn.Close()
+			return
+		}
+		if registry.Has(requestedSub) {
+			fmt.Fprintf(conn, "ERR subdomain in use\n")
+			conn.Close()
+			return
+		}
+	}
+
 	// Limpiar deadline después del handshake exitoso
 	conn.SetReadDeadline(time.Time{})
 
-	id, err := newID()
-	if err != nil {
-		logger.Error("failed to generate tunnel ID: %v", err)
-		fmt.Fprintf(conn, "ERR internal error\n")
-		conn.Close()
-		return
+	var id string
+	if requestedSub != "" {
+		id = requestedSub
+	} else {
+		id, err = newID()
+		if err != nil {
+			logger.Error("failed to generate tunnel ID: %v", err)
+			fmt.Fprintf(conn, "ERR internal error\n")
+			conn.Close()
+			return
+		}
 	}
 	publicURL := publicTunnelURL(id, cfg)
 
@@ -555,6 +576,21 @@ const dashboardHTML = `<!DOCTYPE html>
   </script>
 </body>
 </html>`
+
+func isValidSubdomain(s string) bool {
+	if len(s) < 1 || len(s) > 63 {
+		return false
+	}
+	if s[0] == '-' || s[len(s)-1] == '-' {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+			return false
+		}
+	}
+	return true
+}
 
 func newID() (string, error) {
 	b := make([]byte, 16) // 128 bits de entropía

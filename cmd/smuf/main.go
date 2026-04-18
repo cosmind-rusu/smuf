@@ -25,6 +25,7 @@ func main() {
 	showHelp := flag.Bool("h", false, "Mostrar ayuda")
 	showVersion := flag.Bool("v", false, "Mostrar versión")
 	setupMode := flag.Bool("setup", false, "Ejecutar wizard de configuración")
+	subFlag := flag.String("sub", "", "Subdominio fijo (ej: myapp → myapp.tudominio.com)")
 	flag.Parse()
 
 	if *showHelp {
@@ -54,6 +55,9 @@ func main() {
 		if wizCfg.AuthToken != "" {
 			os.Setenv("SMUF_AUTH_TOKEN", wizCfg.AuthToken)
 		}
+		if wizCfg.Subdomain != "" {
+			os.Setenv("SMUF_SUBDOMAIN", wizCfg.Subdomain)
+		}
 		fmt.Println()
 	}
 
@@ -80,6 +84,10 @@ func main() {
 
 	serverAddr := envOr("SMUF_SERVER", defaultServer)
 	authToken := os.Getenv("SMUF_AUTH_TOKEN")
+	subdomain := *subFlag
+	if subdomain == "" {
+		subdomain = os.Getenv("SMUF_SUBDOMAIN")
+	}
 
 	type tunnelResult struct {
 		port      string
@@ -94,7 +102,11 @@ func main() {
 		wg.Add(1)
 		go func(idx int, port string) {
 			defer wg.Done()
-			sess, url, err := connectTunnel(serverAddr, authToken, port)
+			sub := ""
+			if idx == 0 {
+				sub = subdomain
+			}
+			sess, url, err := connectTunnel(serverAddr, authToken, port, sub)
 			results[idx] = tunnelResult{port: port, publicURL: url, session: sess, err: err}
 		}(i, p)
 	}
@@ -146,15 +158,20 @@ func main() {
 }
 
 // connectTunnel establece un único túnel al servidor para el puerto dado.
-func connectTunnel(serverAddr, authToken, port string) (*yamux.Session, string, error) {
+func connectTunnel(serverAddr, authToken, port, subdomain string) (*yamux.Session, string, error) {
 	conn, err := dialWithRetry(serverAddr, 5, 2*time.Second)
 	if err != nil {
 		return nil, "", fmt.Errorf("cannot reach smuf-server at %s", serverAddr)
 	}
 
-	if authToken != "" {
+	switch {
+	case authToken != "" && subdomain != "":
+		fmt.Fprintf(conn, "AUTH %s PORT %s SUB %s\n", authToken, port, subdomain)
+	case authToken != "":
 		fmt.Fprintf(conn, "AUTH %s PORT %s\n", authToken, port)
-	} else {
+	case subdomain != "":
+		fmt.Fprintf(conn, "PORT %s SUB %s\n", port, subdomain)
+	default:
 		fmt.Fprintf(conn, "PORT %s\n", port)
 	}
 
@@ -234,12 +251,14 @@ func printClientHelp() {
 Uso:
   smuf <puerto>            Abre un túnel para localhost:<puerto>
   smuf <p1> <p2> ...       Múltiples túneles en un solo comando
+  smuf --sub <nombre> <p>  URL fija: nombre.tudominio.com
   smuf --setup             Configurar conexión al servidor
   smuf -h                  Mostrar esta ayuda
 
 Ejemplos:
   smuf 3000                Exponer localhost:3000
   smuf 3000 4000 5000      Tres túneles simultáneos
+  smuf --sub miapp 3000    URL fija: miapp.tudominio.com
 
 Variables de entorno:
   SMUF_SERVER              Dirección del servidor (ej: tudominio.com:7000)

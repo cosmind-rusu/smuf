@@ -27,6 +27,7 @@ type ServerConfig struct {
 type ClientConfig struct {
 	Server    string
 	AuthToken string
+	Subdomain string
 }
 
 const logoRed = "\033[38;5;203m"
@@ -149,13 +150,13 @@ func RunServerWizard() (*ServerConfig, error) {
 func RunClientWizard() (*ClientConfig, error) {
 	printLogo()
 	fmt.Println(logoBold + "  Conectar a tu servidor" + logoReset)
-	fmt.Println(logoGray + "  Solo 2 datos y listo." + logoReset)
+	fmt.Println(logoGray + "  3 pasos y listo." + logoReset)
 	fmt.Println()
 
 	cfg := &ClientConfig{}
 
 	// Paso 1: Servidor
-	fmt.Println(logoGray + "  [1/2] Servidor" + logoReset)
+	fmt.Println(logoGray + "  [1/3] Servidor" + logoReset)
 	if err := survey.AskOne(&survey.Input{
 		Message: "Dirección de tu servidor:",
 		Help:    "El dominio o IP donde instalaste smuf-server\nEjemplo: miapp.com:7000 o 123.45.67.89:7000",
@@ -166,11 +167,21 @@ func RunClientWizard() (*ClientConfig, error) {
 	fmt.Println()
 
 	// Paso 2: Token
-	fmt.Println(logoGray + "  [2/2] Token" + logoReset)
+	fmt.Println(logoGray + "  [2/3] Token" + logoReset)
 	if err := survey.AskOne(&survey.Input{
 		Message: "Pega el token del servidor:",
 		Help:    "El token que se generó cuando configuraste smuf-server\nSi no tienes token, déjalo vacío",
 	}, &cfg.AuthToken); err != nil {
+		return nil, err
+	}
+	fmt.Println()
+
+	// Paso 3: Subdominio fijo (opcional)
+	fmt.Println(logoGray + "  [3/3] Subdominio (opcional)" + logoReset)
+	if err := survey.AskOne(&survey.Input{
+		Message: "Subdominio fijo (vacío = aleatorio cada vez):",
+		Help:    "Ej: 'miapp' → miapp.tudominio.com siempre\nDeja vacío para un ID aleatorio diferente cada vez.",
+	}, &cfg.Subdomain); err != nil {
 		return nil, err
 	}
 	fmt.Println()
@@ -186,7 +197,12 @@ func RunClientWizard() (*ClientConfig, error) {
 	fmt.Println()
 	fmt.Println(logoBold + "  ¡Listo!" + logoReset + " Ahora solo ejecuta:")
 	fmt.Println()
-	fmt.Println("    " + logoBold + "smuf 3000" + logoReset + logoGray + "   (o el puerto de tu app)" + logoReset)
+	if cfg.Subdomain != "" {
+		fmt.Println("    " + logoBold + "smuf 3000" + logoReset + logoGray + "   (o el puerto de tu app)" + logoReset)
+		fmt.Println(logoGray + "    Tu URL será siempre: " + cfg.Subdomain + ".tudominio.com" + logoReset)
+	} else {
+		fmt.Println("    " + logoBold + "smuf 3000" + logoReset + logoGray + "   (o el puerto de tu app)" + logoReset)
+	}
 	fmt.Println()
 
 	return cfg, nil
@@ -227,6 +243,9 @@ func saveClientEnv(cfg *ClientConfig) error {
 	lines = append(lines, fmt.Sprintf("SMUF_SERVER=%s", cfg.Server))
 	if cfg.AuthToken != "" {
 		lines = append(lines, fmt.Sprintf("SMUF_AUTH_TOKEN=%s", cfg.AuthToken))
+	}
+	if cfg.Subdomain != "" {
+		lines = append(lines, fmt.Sprintf("SMUF_SUBDOMAIN=%s", cfg.Subdomain))
 	}
 
 	return os.WriteFile(".env", []byte(strings.Join(lines, "\n")+"\n"), 0600)
