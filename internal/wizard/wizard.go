@@ -3,9 +3,11 @@ package wizard
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -128,9 +130,9 @@ func RunServerWizard() (*ServerConfig, error) {
 
 	// Guardar automáticamente - es lo más sencillo
 	if err := saveServerEnv(cfg); err != nil {
-		fmt.Printf(logoRed+"  ⚠"+logoReset+" No se pudo guardar .env: %v\n", err)
+		fmt.Printf(logoRed+"  ⚠"+logoReset+" No se pudo guardar la configuración: %v\n", err)
 	} else {
-		fmt.Println(logoRed + "  ✓" + logoReset + " Configuración guardada en " + logoBold + ".env" + logoReset)
+		fmt.Println(logoRed + "  ✓" + logoReset + " Configuración guardada en tu perfil de usuario")
 	}
 
 	// Resumen final
@@ -188,9 +190,9 @@ func RunClientWizard() (*ClientConfig, error) {
 
 	// Guardar automáticamente
 	if err := saveClientEnv(cfg); err != nil {
-		fmt.Printf(logoRed+"  ⚠"+logoReset+" No se pudo guardar .env: %v\n", err)
+		fmt.Printf(logoRed+"  ⚠"+logoReset+" No se pudo guardar la configuración: %v\n", err)
 	} else {
-		fmt.Println(logoRed + "  ✓" + logoReset + " Configuración guardada en " + logoBold + ".env" + logoReset)
+		fmt.Println(logoRed + "  ✓" + logoReset + " Configuración guardada en tu perfil de usuario")
 	}
 
 	// Resumen final
@@ -216,46 +218,86 @@ func generateSecureToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func saveServerEnv(cfg *ServerConfig) error {
-	var lines []string
-	lines = append(lines, "# smuf-server configuration")
-	lines = append(lines, fmt.Sprintf("SMUF_DOMAIN=%s", cfg.Domain))
-	if cfg.AuthToken != "" {
-		lines = append(lines, fmt.Sprintf("SMUF_AUTH_TOKEN=%s", cfg.AuthToken))
-	}
-	lines = append(lines, fmt.Sprintf("SMUF_CONTROL_PORT=%s", cfg.ControlPort))
-	lines = append(lines, fmt.Sprintf("SMUF_HTTP_PORT=%s", cfg.HTTPPort))
-	if cfg.HTTPSEnabled {
-		lines = append(lines, "SMUF_HTTPS=true")
-		lines = append(lines, fmt.Sprintf("SMUF_HTTPS_PORT=%s", cfg.HTTPSPort))
-		if cfg.ACMEEmail != "" {
-			lines = append(lines, fmt.Sprintf("SMUF_ACME_EMAIL=%s", cfg.ACMEEmail))
+// configPath devuelve la ruta al archivo de configuración del usuario.
+func configPath() string {
+	var base string
+	if runtime.GOOS == "windows" {
+		base = os.Getenv("APPDATA")
+		if base == "" {
+			base = os.Getenv("USERPROFILE")
+		}
+	} else {
+		base = os.Getenv("HOME")
+		if base == "" {
+			base = "."
 		}
 	}
-	lines = append(lines, fmt.Sprintf("SMUF_MAX_CONNS_PER_IP=%s", cfg.MaxConnsPerIP))
+	return filepath.Join(base, "smuf", "config.json")
+}
 
-	return os.WriteFile(".env", []byte(strings.Join(lines, "\n")+"\n"), 0600)
+func ensureConfigDir(path string) error {
+	return os.MkdirAll(filepath.Dir(path), 0755)
+}
+
+func saveServerEnv(cfg *ServerConfig) error {
+	path := configPath()
+	if err := ensureConfigDir(path); err != nil {
+		return err
+	}
+	data := map[string]string{
+		"SMUF_DOMAIN":         cfg.Domain,
+		"SMUF_AUTH_TOKEN":     cfg.AuthToken,
+		"SMUF_CONTROL_PORT":   cfg.ControlPort,
+		"SMUF_HTTP_PORT":      cfg.HTTPPort,
+		"SMUF_HTTPS_PORT":     cfg.HTTPSPort,
+		"SMUF_ACME_EMAIL":     cfg.ACMEEmail,
+		"SMUF_MAX_CONNS_PER_IP": cfg.MaxConnsPerIP,
+	}
+	if cfg.HTTPSEnabled {
+		data["SMUF_HTTPS"] = "true"
+	}
+	b, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0600)
 }
 
 func saveClientEnv(cfg *ClientConfig) error {
-	var lines []string
-	lines = append(lines, "# smuf client configuration")
-	lines = append(lines, fmt.Sprintf("SMUF_SERVER=%s", cfg.Server))
-	if cfg.AuthToken != "" {
-		lines = append(lines, fmt.Sprintf("SMUF_AUTH_TOKEN=%s", cfg.AuthToken))
+	path := configPath()
+	if err := ensureConfigDir(path); err != nil {
+		return err
 	}
-	if cfg.Subdomain != "" {
-		lines = append(lines, fmt.Sprintf("SMUF_SUBDOMAIN=%s", cfg.Subdomain))
+	data := map[string]string{
+		"SMUF_SERVER":    cfg.Server,
+		"SMUF_AUTH_TOKEN": cfg.AuthToken,
+		"SMUF_SUBDOMAIN": cfg.Subdomain,
 	}
-
-	return os.WriteFile(".env", []byte(strings.Join(lines, "\n")+"\n"), 0600)
+	b, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0600)
 }
 
-// LoadEnvFile carga variables de entorno desde un archivo .env si existe
+// LoadEnvFile carga variables de entorno desde la config del usuario o un .env local.
 func LoadEnvFile() {
-	envPath := ".env"
+	// 1. Intentar JSON de configuración de usuario
+	path := configPath()
+	if data, err := os.ReadFile(path); err == nil {
+		var cfg map[string]string
+		if err := json.Unmarshal(data, &cfg); err == nil {
+			for key, value := range cfg {
+				if os.Getenv(key) == "" {
+					os.Setenv(key, value)
+				}
+			}
+			return
+		}
+	}
 
-	// También buscar junto al ejecutable
+	// 2. Fallback a .env local (junto al ejecutable o en directorio actual)
+	envPath := ".env"
 	if exe, err := os.Executable(); err == nil {
 		altPath := filepath.Join(filepath.Dir(exe), ".env")
 		if _, err := os.Stat(altPath); err == nil {
@@ -265,7 +307,7 @@ func LoadEnvFile() {
 
 	data, err := os.ReadFile(envPath)
 	if err != nil {
-		return // No hay .env, no pasa nada
+		return
 	}
 
 	for _, line := range strings.Split(string(data), "\n") {
@@ -277,7 +319,6 @@ func LoadEnvFile() {
 		if len(parts) == 2 {
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
-			// Solo setear si no está ya definida (env vars tienen prioridad)
 			if os.Getenv(key) == "" {
 				os.Setenv(key, value)
 			}

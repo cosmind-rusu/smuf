@@ -82,6 +82,15 @@ func main() {
 		}
 	}
 
+	// Validar que las apps locales estén corriendo antes de conectar al servidor
+	for _, p := range ports {
+		if _, err := net.DialTimeout("tcp", "localhost:"+p, 2*time.Second); err != nil {
+			fmt.Fprintf(os.Stderr, "\n  No encuentro nada en el puerto %s de tu ordenador.\n", p)
+			fmt.Fprintf(os.Stderr, "  ¿Has arrancado tu programa?\n\n")
+			os.Exit(1)
+		}
+	}
+
 	serverAddr := envOr("SMUF_SERVER", defaultServer)
 	authToken := os.Getenv("SMUF_AUTH_TOKEN")
 	subdomain := *subFlag
@@ -93,6 +102,7 @@ func main() {
 		port      string
 		publicURL string
 		session   *yamux.Session
+		subdomain string
 		err       error
 	}
 
@@ -107,7 +117,7 @@ func main() {
 				sub = subdomain
 			}
 			sess, url, err := connectTunnel(serverAddr, authToken, port, sub)
-			results[idx] = tunnelResult{port: port, publicURL: url, session: sess, err: err}
+			results[idx] = tunnelResult{port: port, publicURL: url, session: sess, subdomain: sub, err: err}
 		}(i, p)
 	}
 	wg.Wait()
@@ -146,7 +156,7 @@ func main() {
 
 	for _, r := range results {
 		if r.session != nil {
-			go serveStreams(r.session, r.port)
+			go runTunnel(serverAddr, authToken, r.port, r.subdomain, r.publicURL)
 		}
 	}
 
@@ -185,7 +195,7 @@ func connectTunnel(serverAddr, authToken, port, subdomain string) (*yamux.Sessio
 	line = strings.TrimSpace(line)
 	if !strings.HasPrefix(line, "OK ") {
 		conn.Close()
-		return nil, "", fmt.Errorf("server rejected: %s", line)
+		return nil, "", humanServerError(line)
 	}
 
 	fields := strings.Fields(line)
@@ -233,16 +243,62 @@ func proxyToLocal(stream net.Conn, port string) {
 
 	local, err := net.DialTimeout("tcp", "localhost:"+port, 5*time.Second)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "\nWarning: localhost:%s unreachable — is your app running?\n", port)
+		fmt.Fprintf(os.Stderr, "\n  No puedo conectar con localhost:%s — ¿se ha cerrado tu programa?\n", port)
 		return
 	}
 	defer local.Close()
+
+	// Timeout para evitar que goroutines se queden colgadas para siempre
+	deadline := time.Now().Add(60 * time.Second)
+	stream.SetDeadline(deadline)
+	local.SetDeadline(deadline)
 
 	// Copia bidireccional: esperamos a que cualquiera de los dos lados cierre
 	done := make(chan struct{}, 2)
 	go func() { io.Copy(local, stream); done <- struct{}{} }()
 	go func() { io.Copy(stream, local); done <- struct{}{} }()
 	<-done
+}
+
+// runTunnel mantiene un túnel activo reconectando automáticamente si se cae.
+func runTunnel(serverAddr, authToken, port, subdomain, initialURL string) {
+	sub := subdomain
+	for {
+		sess, url, err := connectTunnel(serverAddr, authToken, port, sub)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\n  Error en túnel :%s — %v\n", port, err)
+			fmt.Println("  Reintentando en 5 segundos...")
+			time.Sleep(5 * time.Second)
+			continue
+		}
+		if url != initialURL {
+			fmt.Printf("\n  URL actualizada para :%s → %s\n", port, url)
+		}
+		serveStreams(sess, port)
+		fmt.Printf("\n  Conexión perdida para :%s. Reconectando en 3 segundos...\n", port)
+		time.Sleep(3 * time.Second)
+	}
+}
+
+func humanServerError(line string) error {
+	switch {
+	case strings.Contains(line, "authentication required"):
+		return fmt.Errorf("el servidor pide contraseña. Ejecuta 'smuf --setup' para configurar el token")
+	case strings.Contains(line, "invalid token"):
+		return fmt.Errorf("la contraseña no coincide con la del servidor. Copia el token exacto de smuf-server")
+	case strings.Contains(line, "invalid handshake"):
+		return fmt.Errorf("el servidor no entendió la petición. ¿Tienes la misma versión de smuf y smuf-server?")
+	case strings.Contains(line, "invalid port"):
+		return fmt.Errorf("el puerto que pediste no es válido. Usa un número entre 1 y 65535")
+	case strings.Contains(line, "invalid subdomain"):
+		return fmt.Errorf("el nombre de subdominio no es válido. Solo letras, números y guiones")
+	case strings.Contains(line, "subdomain in use"):
+		return fmt.Errorf("ese nombre de subdominio ya está en uso. Prueba con otro")
+	case strings.Contains(line, "rate limit"):
+		return fmt.Errorf("el servidor dice que hay demasiadas conexiones desde tu IP. Espera un poco")
+	default:
+		return fmt.Errorf("el servidor rechazó la conexión: %s", line)
+	}
 }
 
 func printClientHelp() {
@@ -264,7 +320,7 @@ Variables de entorno:
   SMUF_SERVER              Dirección del servidor (ej: tudominio.com:7000)
   SMUF_AUTH_TOKEN          Token de autenticación
 
-Puedes crear un archivo .env junto al ejecutable con estas variables.`)
+La configuración se guarda automáticamente en tu perfil de usuario al usar --setup.`)
 }
 
 func isInteractive() bool {

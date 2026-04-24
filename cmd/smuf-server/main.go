@@ -14,9 +14,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cdrusu/smuf/internal/logger"
@@ -92,8 +94,26 @@ func main() {
 	registry := tunnel.NewRegistry()
 	rateLimiter := newIPRateLimiter(cfg.maxConnsPerIP)
 
+	ln, err := net.Listen("tcp", ":"+cfg.controlPort)
+	if err != nil {
+		logger.Fatal("cannot bind control port %s: %v", cfg.controlPort, err)
+	}
+
 	go startPublicHTTP(cfg, registry)
-	startControl(cfg, registry, rateLimiter)
+
+	var wg sync.WaitGroup
+	go func() {
+		startControl(ln, cfg, registry, rateLimiter, &wg)
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logger.Info("shutting down...")
+	ln.Close()
+	wg.Wait()
+	logger.Info("goodbye")
 }
 
 func printServerHelp() {
@@ -114,7 +134,7 @@ Variables de entorno:
   SMUF_CONTROL_PORT        Puerto de control (default: 7000)
   SMUF_MAX_CONNS_PER_IP    Límite de túneles por IP (default: 5)
 
-Puedes crear un archivo .env junto al ejecutable con estas variables.`)
+La configuración se guarda automáticamente en tu perfil de usuario al usar --setup.`)
 }
 
 func isInteractive() bool {
@@ -176,11 +196,7 @@ func (r *ipRateLimiter) release(ip string) {
 }
 
 // startControl acepta conexiones TCP de clientes smuf y las registra como túneles.
-func startControl(cfg serverConfig, registry *tunnel.Registry, rateLimiter *ipRateLimiter) {
-	ln, err := net.Listen("tcp", ":"+cfg.controlPort)
-	if err != nil {
-		logger.Fatal("cannot bind control port %s: %v", cfg.controlPort, err)
-	}
+func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, rateLimiter *ipRateLimiter, wg *sync.WaitGroup) {
 	defer ln.Close()
 
 	authStatus := "disabled"
@@ -209,7 +225,9 @@ func startControl(cfg serverConfig, registry *tunnel.Registry, rateLimiter *ipRa
 			continue
 		}
 
+		wg.Add(1)
 		go func(c net.Conn, clientIP string) {
+			defer wg.Done()
 			defer rateLimiter.release(clientIP)
 			handleTunnel(c, cfg, registry)
 		}(conn, ip)
@@ -312,7 +330,7 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 	fmt.Fprintf(conn, "OK %s %s\n", id, publicURL)
 
 	// Hacemos upgrade a yamux usando BufConn para no perder bytes ya bufferizados
-	session, err := yamux.Server(tunnel.NewBufConn(conn, bufio.NewReader(conn)), yamux.DefaultConfig())
+	session, err := yamux.Server(tunnel.NewBufConn(conn, bufReader), yamux.DefaultConfig())
 	if err != nil {
 		logger.Error("[%s] yamux init: %v", id, err)
 		conn.Close()
@@ -502,78 +520,102 @@ func (p *httpProxy) serveDashboard(w http.ResponseWriter, r *http.Request) {
 const dashboardHTML = `<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>smuf · dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>smuf · dashboard</title>
+<style>
+  *{box-sizing:border-box}
+  body{background:#0a0a0a;color:#e5e5e5;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;margin:0;min-height:100vh}
+  .wrap{max-width:768px;margin:0 auto;padding:48px 24px}
+  .header{display:flex;align-items:baseline;gap:12px;margin-bottom:40px}
+  .logo{color:#ef4444;font-weight:700;font-size:20px}
+  .sub{color:#525252;font-size:14px}
+  .toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .label{color:#737373;font-size:11px;text-transform:uppercase;letter-spacing:0.1em}
+  .count{color:#525252;font-size:12px}
+  .card{border:1px solid #262626;border-radius:8px;padding:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:24px;background:#171717;margin-bottom:8px}
+  .card-main{flex:1;min-width:0}
+  .card-meta{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .dot{width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0}
+  .idcode{color:#737373;font-size:12px}
+  .ago{color:#525252;font-size:12px}
+  .url{color:#60a5fa;font-size:14px;text-decoration:none;word-break:break-all}
+  .url:hover{color:#93c5fd}
+  .side{text-align:right;font-size:12px;color:#525252;flex-shrink:0}
+  .empty{color:#525252;font-size:14px;padding:16px 0}
+  .footer{margin-top:40px;display:flex;align-items:center;gap:16px;font-size:12px;color:#404040}
+  .footer a{color:#404040;text-decoration:none}
+  .footer a:hover{color:#a3a3a3}
+  .error{color:#ef4444;font-size:14px;padding:16px 0}
+</style>
 </head>
-<body class="bg-gray-950 text-gray-100 min-h-screen font-mono">
-  <div class="max-w-3xl mx-auto px-6 py-12">
-    <div class="flex items-baseline gap-3 mb-10">
-      <span class="text-red-500 font-bold text-xl">smuf</span>
-      <span class="text-gray-600 text-sm">dashboard</span>
-    </div>
-    <div class="flex items-center justify-between mb-3">
-      <span class="text-xs text-gray-500 uppercase tracking-widest">Túneles activos</span>
-      <span id="count" class="text-xs text-gray-600"></span>
-    </div>
-    <div id="tunnels" class="space-y-2">
-      <p class="text-gray-700 text-sm py-4">Cargando&#8230;</p>
-    </div>
-    <div class="mt-10 flex items-center gap-4 text-xs text-gray-700">
-      <span>Actualiza cada 5 s</span>
-      <span>&#183;</span>
-      <a href="/_smuf/tunnels" class="hover:text-gray-400 transition-colors">JSON API</a>
-    </div>
+<body>
+<div class="wrap">
+  <div class="header">
+    <span class="logo">smuf</span>
+    <span class="sub">dashboard</span>
   </div>
-  <script>
-    function ago(iso) {
-      var s = Math.floor((Date.now() - new Date(iso)) / 1000);
-      if (s < 60) return s + 's';
-      if (s < 3600) return Math.floor(s/60) + 'm';
-      var h = Math.floor(s/3600);
-      return h + 'h ' + Math.floor((s%3600)/60) + 'm';
-    }
-    function render(tunnels) {
-      var count = document.getElementById('count');
-      var container = document.getElementById('tunnels');
-      if (!tunnels || tunnels.length === 0) {
-        count.textContent = '';
-        container.innerHTML = '<p class="text-gray-700 text-sm py-4">No hay t&#250;neles activos.</p>';
-        return;
-      }
-      count.textContent = tunnels.length + ' activo' + (tunnels.length === 1 ? '' : 's');
-      var html = '';
-      for (var i = 0; i < tunnels.length; i++) {
-        var t = tunnels[i];
-        html += '<div class="border border-gray-800 rounded-lg p-4 flex items-start justify-between gap-6 bg-gray-900">';
-        html +=   '<div class="flex-1 min-w-0">';
-        html +=     '<div class="flex items-center gap-2 mb-2">';
-        html +=       '<span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0 inline-block"></span>';
-        html +=       '<code class="text-gray-500 text-xs">' + t.id.slice(0,8) + '&#8230;</code>';
-        html +=       '<span class="text-gray-700 text-xs">hace ' + ago(t.created_at) + '</span>';
-        html +=     '</div>';
-        html +=     '<a href="' + t.public_url + '" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300 text-sm block transition-colors">' + t.public_url + '</a>';
-        html +=   '</div>';
-        html +=   '<div class="text-right text-xs text-gray-600 shrink-0">';
-        html +=     '<div>:' + t.port + '</div>';
-        html +=     '<div>' + t.client_ip + '</div>';
-        html +=   '</div>';
-        html += '</div>';
-      }
-      container.innerHTML = html;
-    }
-    function refresh() {
-      fetch('/_smuf/tunnels')
-        .then(function(r) { return r.json(); })
-        .then(render)
-        .catch(function() {
-          document.getElementById('tunnels').innerHTML = '<p class="text-red-500 text-sm py-4">Error al contactar el servidor.</p>';
-        });
-    }
-    refresh();
-    setInterval(refresh, 5000);
-  </script>
+  <div class="toolbar">
+    <span class="label">Túneles activos</span>
+    <span class="count" id="count"></span>
+  </div>
+  <div id="tunnels">
+    <p class="empty">Cargando...</p>
+  </div>
+  <div class="footer">
+    <span>Actualiza cada 5 s</span>
+    <span>·</span>
+    <a href="/_smuf/tunnels">JSON API</a>
+  </div>
+</div>
+<script>
+function ago(iso){
+  var s=Math.floor((Date.now()-new Date(iso))/1000);
+  if(s<60)return s+'s';
+  if(s<3600)return Math.floor(s/60)+'m';
+  var h=Math.floor(s/3600);
+  return h+'h '+Math.floor((s%3600)/60)+'m';
+}
+function render(tunnels){
+  var count=document.getElementById('count');
+  var container=document.getElementById('tunnels');
+  if(!tunnels||tunnels.length===0){
+    count.textContent='';
+    container.innerHTML='<p class="empty">No hay túneles activos.</p>';
+    return;
+  }
+  count.textContent=tunnels.length+' activo'+(tunnels.length===1?'':'s');
+  var html='';
+  for(var i=0;i<tunnels.length;i++){
+    var t=tunnels[i];
+    html+='<div class="card">';
+    html+='<div class="card-main">';
+    html+='<div class="card-meta">';
+    html+='<span class="dot"></span>';
+    html+='<span class="idcode">'+t.id.slice(0,8)+'...</span>';
+    html+='<span class="ago">hace '+ago(t.created_at)+'</span>';
+    html+='</div>';
+    html+='<a href="'+t.public_url+'" target="_blank" rel="noopener" class="url">'+t.public_url+'</a>';
+    html+='</div>';
+    html+='<div class="side">';
+    html+='<div>:'+t.port+'</div>';
+    html+='<div>'+t.client_ip+'</div>';
+    html+='</div>';
+    html+='</div>';
+  }
+  container.innerHTML=html;
+}
+function refresh(){
+  fetch('/_smuf/tunnels')
+    .then(function(r){return r.json();})
+    .then(render)
+    .catch(function(){
+      document.getElementById('tunnels').innerHTML='<p class="error">Error al contactar el servidor.</p>';
+    });
+}
+refresh();
+setInterval(refresh,5000);
+</script>
 </body>
 </html>`
 
@@ -593,7 +635,7 @@ func isValidSubdomain(s string) bool {
 }
 
 func newID() (string, error) {
-	b := make([]byte, 16) // 128 bits de entropía
+	b := make([]byte, 4) // 32 bits = 8 hex chars, suficiente para uso personal
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
