@@ -7,22 +7,34 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
+// TunnelType indica si el túnel es HTTP o TCP puro.
+type TunnelType string
+
+const (
+	TunnelHTTP TunnelType = "http"
+	TunnelTCP  TunnelType = "tcp"
+)
+
 // TunnelEntry holds the yamux session and metadata for an active tunnel.
 type TunnelEntry struct {
-	Session   *yamux.Session
-	Port      string
-	PublicURL string
-	ClientIP  string
-	CreatedAt time.Time
+	Session      *yamux.Session
+	Type         TunnelType
+	Port         string
+	PublicURL    string
+	PublicTCPPort string // solo para TCP puro
+	ClientIP     string
+	CreatedAt    time.Time
 }
 
 // TunnelInfo is a JSON-safe snapshot of tunnel metadata.
 type TunnelInfo struct {
-	ID        string    `json:"id"`
-	Port      string    `json:"port"`
-	PublicURL string    `json:"public_url"`
-	ClientIP  string    `json:"client_ip"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	Type          string    `json:"type"`
+	Port          string    `json:"port"`
+	PublicURL     string    `json:"public_url"`
+	PublicTCPPort string    `json:"public_tcp_port,omitempty"`
+	ClientIP      string    `json:"client_ip"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // Registry mantiene el mapa de sesiones yamux activas, indexadas por ID de túnel.
@@ -70,11 +82,13 @@ func (r *Registry) List() []TunnelInfo {
 	out := make([]TunnelInfo, 0, len(r.entries))
 	for id, e := range r.entries {
 		out = append(out, TunnelInfo{
-			ID:        id,
-			Port:      e.Port,
-			PublicURL: e.PublicURL,
-			ClientIP:  e.ClientIP,
-			CreatedAt: e.CreatedAt,
+			ID:            id,
+			Type:          string(e.Type),
+			Port:          e.Port,
+			PublicURL:     e.PublicURL,
+			PublicTCPPort: e.PublicTCPPort,
+			ClientIP:      e.ClientIP,
+			CreatedAt:     e.CreatedAt,
 		})
 	}
 	return out

@@ -26,6 +26,7 @@ func main() {
 	showVersion := flag.Bool("v", false, "Mostrar versión")
 	setupMode := flag.Bool("setup", false, "Ejecutar wizard de configuración")
 	subFlag := flag.String("sub", "", "Subdominio fijo (ej: myapp → myapp.tudominio.com)")
+	tcpMode := flag.Bool("tcp", false, "Túnel TCP puro (no HTTP)")
 	flag.Parse()
 
 	if *showHelp {
@@ -99,11 +100,17 @@ func main() {
 	}
 
 	type tunnelResult struct {
-		port      string
-		publicURL string
-		session   *yamux.Session
-		subdomain string
-		err       error
+		port       string
+		publicURL  string
+		session    *yamux.Session
+		subdomain  string
+		tunnelType string
+		err        error
+	}
+
+	tunnelType := "http"
+	if *tcpMode {
+		tunnelType = "tcp"
 	}
 
 	results := make([]tunnelResult, len(ports))
@@ -113,11 +120,11 @@ func main() {
 		go func(idx int, port string) {
 			defer wg.Done()
 			sub := ""
-			if idx == 0 {
+			if idx == 0 && tunnelType == "http" {
 				sub = subdomain
 			}
-			sess, url, err := connectTunnel(serverAddr, authToken, port, sub)
-			results[idx] = tunnelResult{port: port, publicURL: url, session: sess, subdomain: sub, err: err}
+			sess, url, err := connectTunnel(serverAddr, authToken, port, sub, tunnelType)
+			results[idx] = tunnelResult{port: port, publicURL: url, session: sess, subdomain: sub, tunnelType: tunnelType, err: err}
 		}(i, p)
 	}
 	wg.Wait()
@@ -132,7 +139,11 @@ func main() {
 		}
 		fmt.Println("  Tunnel ready!")
 		fmt.Println()
-		fmt.Printf("  Local   → http://localhost:%s\n", r.port)
+		if r.tunnelType == "tcp" {
+			fmt.Printf("  Local   → localhost:%s (TCP)\n", r.port)
+		} else {
+			fmt.Printf("  Local   → http://localhost:%s\n", r.port)
+		}
 		fmt.Printf("  Public  → %s\n", r.publicURL)
 		anyOK = true
 	} else {
@@ -156,7 +167,7 @@ func main() {
 
 	for _, r := range results {
 		if r.session != nil {
-			go runTunnel(serverAddr, authToken, r.port, r.subdomain, r.publicURL)
+			go runTunnel(serverAddr, authToken, r.port, r.subdomain, r.publicURL, r.tunnelType)
 		}
 	}
 
@@ -168,21 +179,26 @@ func main() {
 }
 
 // connectTunnel establece un único túnel al servidor para el puerto dado.
-func connectTunnel(serverAddr, authToken, port, subdomain string) (*yamux.Session, string, error) {
+func connectTunnel(serverAddr, authToken, port, subdomain, tunnelType string) (*yamux.Session, string, error) {
 	conn, err := dialWithRetry(serverAddr, 5, 2*time.Second)
 	if err != nil {
 		return nil, "", fmt.Errorf("cannot reach smuf-server at %s", serverAddr)
 	}
 
+	cmd := "PORT"
+	if tunnelType == "tcp" {
+		cmd = "TCP"
+	}
+
 	switch {
-	case authToken != "" && subdomain != "":
-		fmt.Fprintf(conn, "AUTH %s PORT %s SUB %s\n", authToken, port, subdomain)
+	case authToken != "" && subdomain != "" && tunnelType == "http":
+		fmt.Fprintf(conn, "AUTH %s %s %s SUB %s\n", authToken, cmd, port, subdomain)
 	case authToken != "":
-		fmt.Fprintf(conn, "AUTH %s PORT %s\n", authToken, port)
-	case subdomain != "":
-		fmt.Fprintf(conn, "PORT %s SUB %s\n", port, subdomain)
+		fmt.Fprintf(conn, "AUTH %s %s %s\n", authToken, cmd, port)
+	case subdomain != "" && tunnelType == "http":
+		fmt.Fprintf(conn, "%s %s SUB %s\n", cmd, port, subdomain)
 	default:
-		fmt.Fprintf(conn, "PORT %s\n", port)
+		fmt.Fprintf(conn, "%s %s\n", cmd, port)
 	}
 
 	reader := bufio.NewReader(conn)
@@ -248,12 +264,8 @@ func proxyToLocal(stream net.Conn, port string) {
 	}
 	defer local.Close()
 
-	// Timeout para evitar que goroutines se queden colgadas para siempre
-	deadline := time.Now().Add(60 * time.Second)
-	stream.SetDeadline(deadline)
-	local.SetDeadline(deadline)
-
-	// Copia bidireccional: esperamos a que cualquiera de los dos lados cierre
+	// Copia bidireccional: esperamos a que cualquiera de los dos lados cierre.
+	// No usamos deadlines para no romper conexiones persistentes (WebSocket, SSE, etc.).
 	done := make(chan struct{}, 2)
 	go func() { io.Copy(local, stream); done <- struct{}{} }()
 	go func() { io.Copy(stream, local); done <- struct{}{} }()
@@ -261,10 +273,10 @@ func proxyToLocal(stream net.Conn, port string) {
 }
 
 // runTunnel mantiene un túnel activo reconectando automáticamente si se cae.
-func runTunnel(serverAddr, authToken, port, subdomain, initialURL string) {
+func runTunnel(serverAddr, authToken, port, subdomain, initialURL, tunnelType string) {
 	sub := subdomain
 	for {
-		sess, url, err := connectTunnel(serverAddr, authToken, port, sub)
+		sess, url, err := connectTunnel(serverAddr, authToken, port, sub, tunnelType)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "\n  Error en túnel :%s — %v\n", port, err)
 			fmt.Println("  Reintentando en 5 segundos...")
@@ -308,6 +320,7 @@ Uso:
   smuf <puerto>            Abre un túnel para localhost:<puerto>
   smuf <p1> <p2> ...       Múltiples túneles en un solo comando
   smuf --sub <nombre> <p>  URL fija: nombre.tudominio.com
+  smuf --tcp <puerto>      Túnel TCP puro (SSH, bases de datos, etc.)
   smuf --setup             Configurar conexión al servidor
   smuf -h                  Mostrar esta ayuda
 
@@ -315,6 +328,7 @@ Ejemplos:
   smuf 3000                Exponer localhost:3000
   smuf 3000 4000 5000      Tres túneles simultáneos
   smuf --sub miapp 3000    URL fija: miapp.tudominio.com
+  smuf --tcp 22            Exponer SSH como TCP puro
 
 Variables de entorno:
   SMUF_SERVER              Dirección del servidor (ej: tudominio.com:7000)

@@ -1,0 +1,22 @@
+services:
+  smuf-server:
+    build: .
+    container_name: smuf-server
+    ports:
+      - "7000:7000"   # Control port (clientes se conectan aquí)
+      - "8080:8080"   # HTTP público
+      - "443:443"     # HTTPS (opcional)
+      - "80:80"       # HTTP redirect + ACME (opcional)
+    environment:
+      - SMUF_DOMAIN=tudominio.com
+      - SMUF_AUTH_TOKEN=${SMUF_AUTH_TOKEN}
+      - SMUF_CONTROL_PORT=7000
+      - SMUF_HTTP_PORT=8080
+      - SMUF_HTTPS=false
+      - SMUF_HTTPS_PORT=443
+      - SMUF_ACME_EMAIL=
+      - SMUF_MAX_CONNS_PER_IP=5
+      - SMUF_TCP_PORT_RANGE=20000-30000
+    volumes:
+      - ./certs:/app/certs
+    restart: unless-stopped

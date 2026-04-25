@@ -76,6 +76,16 @@ func main() {
 		fmt.Println()
 	}
 
+	tcpRange := envOr("SMUF_TCP_PORT_RANGE", "")
+	tcpStart, tcpEnd := 0, 0
+	if tcpRange != "" {
+		parts := strings.Split(tcpRange, "-")
+		if len(parts) == 2 {
+			tcpStart, _ = strconv.Atoi(strings.TrimSpace(parts[0]))
+			tcpEnd, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+		}
+	}
+
 	cfg := serverConfig{
 		controlPort:      envOr("SMUF_CONTROL_PORT", "7000"),
 		httpPort:         envOr("SMUF_HTTP_PORT", "8080"),
@@ -89,10 +99,17 @@ func main() {
 		authToken:        os.Getenv("SMUF_AUTH_TOKEN"),
 		maxConnsPerIP:    envInt("SMUF_MAX_CONNS_PER_IP", 5),
 		handshakeTimeout: envDuration("SMUF_HANDSHAKE_TIMEOUT", 10*time.Second),
+		tcpEnabled:       tcpRange != "" && tcpStart > 0 && tcpEnd >= tcpStart,
+		tcpPortStart:     tcpStart,
+		tcpPortEnd:       tcpEnd,
 	}
 
 	registry := tunnel.NewRegistry()
 	rateLimiter := newIPRateLimiter(cfg.maxConnsPerIP)
+	var tcpAllocator *tcpPortAllocator
+	if cfg.tcpEnabled {
+		tcpAllocator = newTCPPortAllocator(cfg.tcpPortStart, cfg.tcpPortEnd)
+	}
 
 	ln, err := net.Listen("tcp", ":"+cfg.controlPort)
 	if err != nil {
@@ -103,7 +120,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	go func() {
-		startControl(ln, cfg, registry, rateLimiter, &wg)
+		startControl(ln, cfg, registry, rateLimiter, tcpAllocator, &wg)
 	}()
 
 	quit := make(chan os.Signal, 1)
@@ -158,6 +175,10 @@ type serverConfig struct {
 	authToken        string
 	maxConnsPerIP    int
 	handshakeTimeout time.Duration
+	// TCP puro
+	tcpEnabled       bool
+	tcpPortStart     int
+	tcpPortEnd       int
 }
 
 // ipRateLimiter controla el número de conexiones activas por IP
@@ -184,6 +205,52 @@ func (r *ipRateLimiter) acquire(ip string) bool {
 	return true
 }
 
+// tcpPortAllocator gestiona un rango de puertos TCP públicos para túneles puros.
+type tcpPortAllocator struct {
+	mu       sync.Mutex
+	start    int
+	end      int
+	assigned map[string]int // tunnel ID -> puerto
+	inUse    map[int]string // puerto -> tunnel ID
+}
+
+func newTCPPortAllocator(start, end int) *tcpPortAllocator {
+	return &tcpPortAllocator{
+		start:    start,
+		end:      end,
+		assigned: make(map[string]int),
+		inUse:    make(map[int]string),
+	}
+}
+
+func (a *tcpPortAllocator) allocate(id string) (int, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if p, ok := a.assigned[id]; ok {
+		return p, true
+	}
+	for p := a.start; p <= a.end; p++ {
+		if _, used := a.inUse[p]; !used {
+			if ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p)); err == nil {
+				ln.Close()
+				a.assigned[id] = p
+				a.inUse[p] = id
+				return p, true
+			}
+		}
+	}
+	return 0, false
+}
+
+func (a *tcpPortAllocator) release(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if p, ok := a.assigned[id]; ok {
+		delete(a.inUse, p)
+		delete(a.assigned, id)
+	}
+}
+
 func (r *ipRateLimiter) release(ip string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -196,7 +263,7 @@ func (r *ipRateLimiter) release(ip string) {
 }
 
 // startControl acepta conexiones TCP de clientes smuf y las registra como túneles.
-func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, rateLimiter *ipRateLimiter, wg *sync.WaitGroup) {
+func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, rateLimiter *ipRateLimiter, tcpAllocator *tcpPortAllocator, wg *sync.WaitGroup) {
 	defer ln.Close()
 
 	authStatus := "disabled"
@@ -208,6 +275,9 @@ func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, 
 		logger.Info("smuf-server ready | control :%s | http :%s | https :%s | domain %s | auth %s", cfg.controlPort, cfg.httpPort, cfg.httpsPort, cfg.domain, authStatus)
 	} else {
 		logger.Info("smuf-server ready | control :%s | http :%s | domain %s | auth %s", cfg.controlPort, cfg.httpPort, cfg.domain, authStatus)
+	}
+	if cfg.tcpEnabled {
+		logger.Info("tcp tunnel range :%d-%d", cfg.tcpPortStart, cfg.tcpPortEnd)
 	}
 
 	for {
@@ -229,7 +299,7 @@ func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, 
 		go func(c net.Conn, clientIP string) {
 			defer wg.Done()
 			defer rateLimiter.release(clientIP)
-			handleTunnel(c, cfg, registry)
+			handleTunnel(c, cfg, registry, tcpAllocator)
 		}(conn, ip)
 	}
 }
@@ -244,14 +314,14 @@ func extractIP(addr string) string {
 
 // handleTunnel ejecuta el handshake, establece la sesión yamux y bloquea
 // hasta que el cliente desconecte.
-func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
+func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry, tcpAllocator *tcpPortAllocator) {
 	// Timeout para el handshake completo
 	conn.SetReadDeadline(time.Now().Add(cfg.handshakeTimeout))
 
 	limitedReader := io.LimitReader(conn, 1024) // Límite de 1KB para handshake
 	bufReader := bufio.NewReader(limitedReader)
 
-	// Handshake: esperamos "PORT <puerto>\n" o "AUTH <token> PORT <puerto>\n"
+	// Handshake: esperamos "PORT <puerto>\n", "TCP <puerto>\n" o "AUTH <token> PORT/TCP <puerto>\n"
 	line, err := bufReader.ReadString('\n')
 	if err != nil {
 		logger.Error("handshake from %s: %v", conn.RemoteAddr(), err)
@@ -262,8 +332,9 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 	parts := strings.Fields(strings.TrimSpace(line))
 
 	// Autenticación requerida si SMUF_AUTH_TOKEN está configurado
+	cmdIdx := 0
 	if cfg.authToken != "" {
-		if len(parts) < 4 || parts[0] != "AUTH" || parts[2] != "PORT" {
+		if len(parts) < 4 || parts[0] != "AUTH" {
 			fmt.Fprintf(conn, "ERR authentication required\n")
 			conn.Close()
 			return
@@ -275,17 +346,17 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 			conn.Close()
 			return
 		}
-		parts = parts[2:] // Quitar AUTH <token>, dejar PORT <puerto>
+		cmdIdx = 2
 	}
 
-	if len(parts) < 2 || parts[0] != "PORT" {
+	if len(parts) < cmdIdx+2 {
 		fmt.Fprintf(conn, "ERR invalid handshake\n")
 		conn.Close()
 		return
 	}
 
-	// Validar que el puerto sea un número válido
-	localPort := parts[1]
+	cmd := parts[cmdIdx]
+	localPort := parts[cmdIdx+1]
 	portNum, err := strconv.Atoi(localPort)
 	if err != nil || portNum < 1 || portNum > 65535 {
 		fmt.Fprintf(conn, "ERR invalid port\n")
@@ -293,10 +364,18 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 		return
 	}
 
-	// Subdominio personalizado: PORT <port> SUB <name>
+	isTCP := cmd == "TCP"
+	isHTTP := cmd == "PORT"
+	if !isTCP && !isHTTP {
+		fmt.Fprintf(conn, "ERR invalid handshake\n")
+		conn.Close()
+		return
+	}
+
+	// Subdominio personalizado solo para HTTP
 	requestedSub := ""
-	if len(parts) == 4 && parts[2] == "SUB" {
-		requestedSub = strings.ToLower(parts[3])
+	if isHTTP && len(parts) == cmdIdx+4 && parts[cmdIdx+2] == "SUB" {
+		requestedSub = strings.ToLower(parts[cmdIdx+3])
 		if !isValidSubdomain(requestedSub) {
 			fmt.Fprintf(conn, "ERR invalid subdomain: solo letras, números y guiones (1-63 chars)\n")
 			conn.Close()
@@ -324,7 +403,26 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 			return
 		}
 	}
-	publicURL := publicTunnelURL(id, cfg)
+
+	var publicURL string
+	var publicTCPPort int
+	if isTCP {
+		if !cfg.tcpEnabled {
+			fmt.Fprintf(conn, "ERR tcp tunnels disabled\n")
+			conn.Close()
+			return
+		}
+		var ok bool
+		publicTCPPort, ok = tcpAllocator.allocate(id)
+		if !ok {
+			fmt.Fprintf(conn, "ERR no tcp ports available\n")
+			conn.Close()
+			return
+		}
+		publicURL = fmt.Sprintf("tcp://%s:%d", cfg.domain, publicTCPPort)
+	} else {
+		publicURL = publicTunnelURL(id, cfg)
+	}
 
 	// Respondemos con el ID asignado y la URL pública que debe mostrar el cliente.
 	fmt.Fprintf(conn, "OK %s %s\n", id, publicURL)
@@ -337,16 +435,40 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 		return
 	}
 
-	registry.Add(id, &tunnel.TunnelEntry{
+	entry := &tunnel.TunnelEntry{
 		Session:   session,
+		Type:      tunnel.TunnelHTTP,
 		Port:      localPort,
 		PublicURL: publicURL,
 		ClientIP:  extractIP(conn.RemoteAddr().String()),
 		CreatedAt: time.Now(),
-	})
-	logger.Info("[%s] tunnel open → local port %s | public %s", id, localPort, publicURL)
+	}
+	if isTCP {
+		entry.Type = tunnel.TunnelTCP
+		entry.PublicTCPPort = strconv.Itoa(publicTCPPort)
+	}
+	registry.Add(id, entry)
+	logger.Info("[%s] tunnel open → type=%s local port %s | public %s", id, entry.Type, localPort, publicURL)
+
+	// Para TCP, arrancar listener público
+	var tcpListener net.Listener
+	if isTCP {
+		tcpListener, err = net.Listen("tcp", fmt.Sprintf(":%d", publicTCPPort))
+		if err != nil {
+			logger.Error("[%s] cannot bind tcp port %d: %v", id, publicTCPPort, err)
+			session.Close()
+			registry.Remove(id)
+			tcpAllocator.release(id)
+			return
+		}
+		go serveTCPListener(id, tcpListener, session)
+	}
 
 	defer func() {
+		if tcpListener != nil {
+			tcpListener.Close()
+			tcpAllocator.release(id)
+		}
 		session.Close()
 		registry.Remove(id)
 		logger.Info("[%s] tunnel closed", id)
@@ -354,6 +476,32 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry) {
 
 	// Bloqueamos hasta que la sesión yamux termine (cliente desconecta o error)
 	<-session.CloseChan()
+}
+
+// serveTCPListener acepta conexiones TCP en el puerto público y las reenvía
+// a streams yamux del túnel correspondiente.
+func serveTCPListener(tunnelID string, ln net.Listener, session *yamux.Session) {
+	logger.Info("[%s] tcp listener started on %s", tunnelID, ln.Addr())
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return // listener cerrado
+		}
+		go func(c net.Conn) {
+			defer c.Close()
+			stream, err := session.Open()
+			if err != nil {
+				logger.Error("[%s] open yamux stream: %v", tunnelID, err)
+				return
+			}
+			defer stream.Close()
+			// Copia bidireccional de bytes crudos
+			done := make(chan struct{}, 2)
+			go func() { io.Copy(stream, c); done <- struct{}{} }()
+			go func() { io.Copy(c, stream); done <- struct{}{} }()
+			<-done
+		}(conn)
+	}
 }
 
 // startPublicHTTP levanta el servidor público. En modo HTTP enruta peticiones
@@ -482,6 +630,12 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer stream.Close()
 
+	// Si es un upgrade (WebSocket, etc.), pasamos a modo túnel de bytes crudo
+	if isUpgradeRequest(r) {
+		handleUpgrade(w, r, stream)
+		return
+	}
+
 	// Escribimos la petición HTTP en el stream (el cliente la reenvía a localhost)
 	if err := r.Write(stream); err != nil {
 		http.Error(w, "forward error", http.StatusBadGateway)
@@ -524,29 +678,101 @@ const dashboardHTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>smuf · dashboard</title>
 <style>
-  *{box-sizing:border-box}
-  body{background:#0a0a0a;color:#e5e5e5;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;margin:0;min-height:100vh}
-  .wrap{max-width:768px;margin:0 auto;padding:48px 24px}
-  .header{display:flex;align-items:baseline;gap:12px;margin-bottom:40px}
-  .logo{color:#ef4444;font-weight:700;font-size:20px}
-  .sub{color:#525252;font-size:14px}
-  .toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-  .label{color:#737373;font-size:11px;text-transform:uppercase;letter-spacing:0.1em}
-  .count{color:#525252;font-size:12px}
-  .card{border:1px solid #262626;border-radius:8px;padding:16px;display:flex;align-items:flex-start;justify-content:space-between;gap:24px;background:#171717;margin-bottom:8px}
+  :root{
+    --bg-deep:#0d0e12;
+    --bg-surface:#15181e;
+    --bg-card:#17191f;
+    --border:#26292f;
+    --text-primary:#efeff1;
+    --text-secondary:#d5d7db;
+    --text-muted:#656a76;
+    --text-faint:#3b3d45;
+    --accent:#1060ff;
+    --accent-hover:#2b89ff;
+    --accent-danger:#e53e3e;
+    --success:#22c55e;
+    --shadow:rgba(97,104,117,0.05) 0px 1px 1px, rgba(97,104,117,0.05) 0px 2px 2px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg-deep);
+    color:var(--text-primary);
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:16px;
+    line-height:1.63;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1152px;margin:0 auto;padding:64px 24px}
+  /* Header */
+  .header{display:flex;align-items:baseline;gap:16px;margin-bottom:56px}
+  .logo{
+    font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-size:28px;font-weight:700;line-height:1.19;letter-spacing:-0.02em;
+    color:var(--text-primary);
+  }
+  .sub{
+    font-size:13px;font-weight:600;line-height:1.69;
+    text-transform:uppercase;letter-spacing:1.3px;
+    color:var(--text-muted);
+  }
+  /* Section label */
+  .section-label{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:16px;
+  }
+  .section-label span{
+    font-size:13px;font-weight:600;line-height:1.69;
+    text-transform:uppercase;letter-spacing:1.3px;
+    color:var(--text-muted);
+  }
+  .count{font-size:13px;color:var(--text-faint);font-weight:500}
+  /* Cards */
+  .card-grid{display:flex;flex-direction:column;gap:12px}
+  .card{
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:20px 24px;
+    display:flex;align-items:flex-start;justify-content:space-between;gap:24px;
+    transition:border-color .2s ease;
+  }
+  .card:hover{border-color:rgba(97,104,117,0.25)}
   .card-main{flex:1;min-width:0}
-  .card-meta{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-  .dot{width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0}
-  .idcode{color:#737373;font-size:12px}
-  .ago{color:#525252;font-size:12px}
-  .url{color:#60a5fa;font-size:14px;text-decoration:none;word-break:break-all}
-  .url:hover{color:#93c5fd}
-  .side{text-align:right;font-size:12px;color:#525252;flex-shrink:0}
-  .empty{color:#525252;font-size:14px;padding:16px 0}
-  .footer{margin-top:40px;display:flex;align-items:center;gap:16px;font-size:12px;color:#404040}
-  .footer a{color:#404040;text-decoration:none}
-  .footer a:hover{color:#a3a3a3}
-  .error{color:#ef4444;font-size:14px;padding:16px 0}
+  .card-meta{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;flex-shrink:0}
+  .badge{
+    font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;
+    padding:2px 7px;border-radius:5px;
+    background:rgba(16,96,255,0.12);color:var(--accent-hover);
+    border:1px solid rgba(16,96,255,0.25);
+  }
+  .badge.tcp{background:rgba(123,66,188,0.12);color:#b388ff;border-color:rgba(123,66,188,0.25)}
+  .idcode{font-size:12px;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+  .ago{font-size:12px;color:var(--text-faint)}
+  .url{
+    font-size:15px;color:var(--accent);text-decoration:none;
+    word-break:break-all;font-weight:500;
+  }
+  .url:hover{color:var(--accent-hover);text-decoration:underline}
+  .side{text-align:right;font-size:13px;color:var(--text-muted);flex-shrink:0;line-height:1.6}
+  .side strong{color:var(--text-secondary);font-weight:600}
+  /* Empty / error */
+  .empty{color:var(--text-faint);font-size:15px;padding:24px 0}
+  .error{color:var(--accent-danger);font-size:15px;padding:24px 0}
+  /* Footer */
+  .footer{margin-top:56px;display:flex;align-items:center;gap:16px;font-size:13px;color:var(--text-faint)}
+  .footer a{color:var(--text-muted);text-decoration:none;font-weight:500}
+  .footer a:hover{color:var(--text-secondary);text-decoration:underline}
+  /* Responsive */
+  @media (max-width:600px){
+    .wrap{padding:40px 16px}
+    .header{margin-bottom:36px}
+    .logo{font-size:22px}
+    .card{padding:16px;gap:16px;flex-direction:column}
+    .side{text-align:left}
+  }
 </style>
 </head>
 <body>
@@ -555,11 +781,11 @@ const dashboardHTML = `<!DOCTYPE html>
     <span class="logo">smuf</span>
     <span class="sub">dashboard</span>
   </div>
-  <div class="toolbar">
-    <span class="label">Túneles activos</span>
+  <div class="section-label">
+    <span>Túneles activos</span>
     <span class="count" id="count"></span>
   </div>
-  <div id="tunnels">
+  <div id="tunnels" class="card-grid">
     <p class="empty">Cargando...</p>
   </div>
   <div class="footer">
@@ -588,18 +814,25 @@ function render(tunnels){
   var html='';
   for(var i=0;i<tunnels.length;i++){
     var t=tunnels[i];
+    var isTCP=t.type==='tcp';
+    var badgeClass=isTCP?'badge tcp':'badge';
+    var badgeText=isTCP?'TCP':'HTTP';
     html+='<div class="card">';
     html+='<div class="card-main">';
     html+='<div class="card-meta">';
     html+='<span class="dot"></span>';
-    html+='<span class="idcode">'+t.id.slice(0,8)+'...</span>';
+    html+='<span class="'+badgeClass+'">'+badgeText+'</span>';
+    html+='<span class="idcode">'+t.id+'</span>';
     html+='<span class="ago">hace '+ago(t.created_at)+'</span>';
     html+='</div>';
     html+='<a href="'+t.public_url+'" target="_blank" rel="noopener" class="url">'+t.public_url+'</a>';
     html+='</div>';
     html+='<div class="side">';
-    html+='<div>:'+t.port+'</div>';
+    html+='<div>local <strong>:'+t.port+'</strong></div>';
     html+='<div>'+t.client_ip+'</div>';
+    if(t.public_tcp_port){
+      html+='<div>tcp <strong>:'+t.public_tcp_port+'</strong></div>';
+    }
     html+='</div>';
     html+='</div>';
   }
@@ -703,4 +936,58 @@ func withPort(host, port string) string {
 		return host
 	}
 	return net.JoinHostPort(host, port)
+}
+
+// isUpgradeRequest detecta si una petición HTTP es un protocol upgrade
+// (WebSocket, CONNECT, etc.) que requiere un túnel de bytes bidireccional.
+func isUpgradeRequest(r *http.Request) bool {
+	return strings.ToLower(r.Header.Get("Upgrade")) != "" ||
+		strings.ToLower(r.Header.Get("Connection")) == "upgrade" ||
+		r.Method == http.MethodConnect
+}
+
+// handleUpgrade toma el control de la conexión TCP del cliente (hijack)
+// y pasa a modo túnel de bytes entre el cliente y el stream yamux.
+func handleUpgrade(w http.ResponseWriter, r *http.Request, stream net.Conn) {
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "hijacking not supported", http.StatusInternalServerError)
+		return
+	}
+	conn, bufrw, err := hj.Hijack()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+	defer stream.Close()
+
+	// Reconstruir y enviar la petición HTTP original por el stream yamux
+	if err := r.Write(stream); err != nil {
+		logger.Error("upgrade forward: %v", err)
+		return
+	}
+
+	// Si el bufio.Reader del hijack tiene bytes ya leídos (por ejemplo,
+	// el inicio de un frame WebSocket enviado inmediatamente tras la petición),
+	// los enviamos primero para no perderlos.
+	if bufrw.Reader.Buffered() > 0 {
+		data, _ := bufrw.Reader.Peek(bufrw.Reader.Buffered())
+		if _, err := stream.Write(data); err != nil {
+			logger.Error("upgrade buffered write: %v", err)
+			return
+		}
+	}
+
+	// Copia bidireccional de bytes hasta que un lado cierre
+	errChan := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(stream, conn)
+		errChan <- err
+	}()
+	go func() {
+		_, err := io.Copy(conn, stream)
+		errChan <- err
+	}()
+	<-errChan
 }

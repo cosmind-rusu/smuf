@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>smuf · dashboard</title>
+<style>
+  :root{
+    --bg-deep:#0d0e12;
+    --bg-surface:#15181e;
+    --bg-card:#17191f;
+    --border:#26292f;
+    --text-primary:#efeff1;
+    --text-secondary:#d5d7db;
+    --text-muted:#656a76;
+    --text-faint:#3b3d45;
+    --accent:#1060ff;
+    --accent-hover:#2b89ff;
+    --accent-danger:#e53e3e;
+    --success:#22c55e;
+    --shadow:rgba(97,104,117,0.05) 0px 1px 1px, rgba(97,104,117,0.05) 0px 2px 2px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg-deep);
+    color:var(--text-primary);
+    font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:16px;
+    line-height:1.63;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1152px;margin:0 auto;padding:64px 24px}
+  /* Header */
+  .header{display:flex;align-items:baseline;gap:16px;margin-bottom:56px}
+  .logo{
+    font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    font-size:28px;font-weight:700;line-height:1.19;letter-spacing:-0.02em;
+    color:var(--text-primary);
+  }
+  .sub{
+    font-size:13px;font-weight:600;line-height:1.69;
+    text-transform:uppercase;letter-spacing:1.3px;
+    color:var(--text-muted);
+  }
+  /* Section label */
+  .section-label{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:16px;
+  }
+  .section-label span{
+    font-size:13px;font-weight:600;line-height:1.69;
+    text-transform:uppercase;letter-spacing:1.3px;
+    color:var(--text-muted);
+  }
+  .count{font-size:13px;color:var(--text-faint);font-weight:500}
+  /* Cards */
+  .card-grid{display:flex;flex-direction:column;gap:12px}
+  .card{
+    background:var(--bg-card);
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:var(--shadow);
+    padding:20px 24px;
+    display:flex;align-items:flex-start;justify-content:space-between;gap:24px;
+    transition:border-color .2s ease;
+  }
+  .card:hover{border-color:rgba(97,104,117,0.25)}
+  .card-main{flex:1;min-width:0}
+  .card-meta{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--success);display:inline-block;flex-shrink:0}
+  .badge{
+    font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;
+    padding:2px 7px;border-radius:5px;
+    background:rgba(16,96,255,0.12);color:var(--accent-hover);
+    border:1px solid rgba(16,96,255,0.25);
+  }
+  .badge.tcp{background:rgba(123,66,188,0.12);color:#b388ff;border-color:rgba(123,66,188,0.25)}
+  .idcode{font-size:12px;color:var(--text-muted);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+  .ago{font-size:12px;color:var(--text-faint)}
+  .url{
+    font-size:15px;color:var(--accent);text-decoration:none;
+    word-break:break-all;font-weight:500;
+  }
+  .url:hover{color:var(--accent-hover);text-decoration:underline}
+  .side{text-align:right;font-size:13px;color:var(--text-muted);flex-shrink:0;line-height:1.6}
+  .side strong{color:var(--text-secondary);font-weight:600}
+  /* Empty / error */
+  .empty{color:var(--text-faint);font-size:15px;padding:24px 0}
+  .error{color:var(--accent-danger);font-size:15px;padding:24px 0}
+  /* Footer */
+  .footer{margin-top:56px;display:flex;align-items:center;gap:16px;font-size:13px;color:var(--text-faint)}
+  .footer a{color:var(--text-muted);text-decoration:none;font-weight:500}
+  .footer a:hover{color:var(--text-secondary);text-decoration:underline}
+  /* Responsive */
+  @media (max-width:600px){
+    .wrap{padding:40px 16px}
+    .header{margin-bottom:36px}
+    .logo{font-size:22px}
+    .card{padding:16px;gap:16px;flex-direction:column}
+    .side{text-align:left}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <span class="logo">smuf</span>
+    <span class="sub">dashboard</span>
+  </div>
+  <div class="section-label">
+    <span>Túneles activos</span>
+    <span class="count">2 activos</span>
+  </div>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-main">
+        <div class="card-meta">
+          <span class="dot"></span>
+          <span class="badge">HTTP</span>
+          <span class="idcode">a3f1c9d2</span>
+          <span class="ago">hace 2m</span>
+        </div>
+        <a href="https://a3f1c9d2.tudominio.com" target="_blank" rel="noopener" class="url">https://a3f1c9d2.tudominio.com</a>
+      </div>
+      <div class="side">
+        <div>local <strong>:3000</strong></div>
+        <div>192.168.1.45</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-main">
+        <div class="card-meta">
+          <span class="dot"></span>
+          <span class="badge tcp">TCP</span>
+          <span class="idcode">testtcp01</span>
+          <span class="ago">hace 15s</span>
+        </div>
+        <a href="#" class="url">tcp://tudominio.com:25001</a>
+      </div>
+      <div class="side">
+        <div>local <strong>:22</strong></div>
+        <div>192.168.1.45</div>
+        <div>tcp <strong>:25001</strong></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>Actualiza cada 5 s</span>
+    <span>·</span>
+    <a href="/_smuf/tunnels">JSON API</a>
+  </div>
+</div>
+</body>
+</html>
