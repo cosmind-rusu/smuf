@@ -9,7 +9,7 @@
   <br/><br/>
 
   [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-E53E3E?style=flat-square)](LICENSE)
+  [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-9B59B6?style=flat-square)](LICENSE)
   [![Self-hosted](https://img.shields.io/badge/self--hosted-✓-E53E3E?style=flat-square)]()
   [![yamux](https://img.shields.io/badge/yamux-multiplexing-656a76?style=flat-square)](https://github.com/hashicorp/yamux)
 </div>
@@ -206,5 +206,5 @@ smuf/
 <div align="center">
   <img src="logo.svg" width="40" alt="smuf"/>
   <br/>
-  <sub>Hecho con Go · <a href="LICENSE">MIT License</a></sub>
+  <sub>Hecho con Go · <a href="LICENSE">Apache 2.0</a></sub>
 </div>
