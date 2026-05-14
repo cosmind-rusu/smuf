@@ -1,0 +1,1 @@
+smuf is a self-hosted HTTP tunnel tool — like ngrok, but yours. Deploy on Railway for zero-quota, always-warm tunnels to your local services.
