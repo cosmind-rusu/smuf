@@ -32,6 +32,16 @@ localhost:3000  ◄─────►  https://a3f1c9.yourdomain.com
 
 ---
 
+## Deploy on Railway
+
+One-click deploy `smuf-server` to Railway:
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/high-warm?utm_medium=integration&utm_source=template&utm_campaign=generic)
+
+Once deployed, the server URL and auth token are set via Railway's environment variables (see [Configuration](#configuration) below). Then connect with the client from any machine.
+
+---
+
 ## Installation
 
 ### Option A: Download a binary (recommended)
