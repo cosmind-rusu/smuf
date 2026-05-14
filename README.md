@@ -22,15 +22,13 @@ smuf exposes a local port on a public URL — like ngrok, but **yours**: no quot
 localhost:3000  ◄─────►  https://a3f1c9.yourdomain.com
 ```
 
----
+<br/>
 
-## Deploy on Railway
-
-One-click deploy `smuf-server` to Railway:
-
-[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/high-warm?utm_medium=integration&utm_source=template&utm_campaign=generic)
-
-Once deployed, the server URL and auth token are set via Railway's environment variables (see [Configuration](#configuration) below). Then connect with the client from any machine.
+<p align="center">
+  <a href="assets/demo.svg">
+    <img src="assets/demo.svg" alt="smuf demo" width="95%"/>
+  </a>
+</p>
 
 ---
 
@@ -38,7 +36,7 @@ Once deployed, the server URL and auth token are set via Railway's environment v
 
 ### Option A: Download a binary (recommended)
 
-Go to [Releases](https://github.com/cosmind-rusu/smuf/releases) and download the binary for your OS.
+Go to [Releases](https://github.com/cdrusu/smuf/releases) and download the binary for your OS.
 
 | Binary | Where it goes |
 |--------|--------------|
@@ -56,7 +54,7 @@ docker compose up -d
 You'll need [Go](https://go.dev/dl/) 1.21+.
 
 ```bash
-git clone https://github.com/cosmind-rusu/smuf.git && cd smuf
+git clone https://github.com/cdrusu/smuf.git && cd smuf
 go build -o smuf-server ./cmd/smuf-server
 go build -o smuf        ./cmd/smuf
 ```
@@ -204,12 +202,6 @@ smuf/
     ├── wizard/         # Interactive setup
     └── logger/         # Timestamped logging
 ```
-
----
-
-## Documentation
-
-For detailed guides on installation, server setup, client usage, configuration, troubleshooting, and architecture, check out the [**smuf wiki**](https://github.com/cosmind-rusu/smuf/wiki).
 
 ---
 
