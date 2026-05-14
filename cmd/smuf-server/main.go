@@ -28,6 +28,12 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	// Flags para modo no-interactivo
 	showHelp := flag.Bool("h", false, "Mostrar ayuda")
@@ -40,7 +46,7 @@ func main() {
 		return
 	}
 	if *showVersion {
-		fmt.Println("smuf-server v0.3.0")
+		fmt.Println("smuf-server " + version)
 		return
 	}
 
