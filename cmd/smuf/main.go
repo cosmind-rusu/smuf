@@ -18,6 +18,12 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 const defaultServer = "localhost:7000"
 
 func main() {
@@ -34,7 +40,7 @@ func main() {
 		return
 	}
 	if *showVersion {
-		fmt.Println("smuf v0.3.0")
+		fmt.Println("smuf " + version)
 		return
 	}
 

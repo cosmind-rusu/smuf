@@ -56,7 +56,7 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: ["zip"]
     files:
       - README.md
       - LICENSE
@@ -65,7 +65,7 @@ checksum:
   name_template: 'checksums.txt'
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  name_template: "{{ .Version }}-SNAPSHOT"
 
 changelog:
   sort: asc
@@ -79,7 +79,7 @@ changelog:
 
 release:
   github:
-    owner: cdrusu
+    owner: cosmind-rusu
     name: smuf
   name_template: "{{ .ProjectName }} {{ .Version }}"
   draft: true
