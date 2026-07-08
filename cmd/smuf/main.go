@@ -167,7 +167,7 @@ func main() {
 
 	for _, r := range results {
 		if r.session != nil {
-			go runTunnel(serverAddr, authToken, r.port, r.subdomain, r.publicURL, r.tunnelType)
+			go runTunnel(serverAddr, authToken, r.port, r.subdomain, r.publicURL, r.tunnelType, r.session)
 		}
 	}
 
@@ -272,23 +272,33 @@ func proxyToLocal(stream net.Conn, port string) {
 	<-done
 }
 
-// runTunnel mantiene un túnel activo reconectando automáticamente si se cae.
-func runTunnel(serverAddr, authToken, port, subdomain, initialURL, tunnelType string) {
-	sub := subdomain
+// runTunnel sirve la sesión ya establecida y, si se cae, reconecta
+// automáticamente. La sesión inicial NO se vuelve a abrir: se reutiliza la
+// que connectTunnel ya registró en el servidor (evita una segunda conexión
+// colgada y que `--sub` falle con "subdomain in use").
+func runTunnel(serverAddr, authToken, port, subdomain, initialURL, tunnelType string, sess *yamux.Session) {
 	for {
-		sess, url, err := connectTunnel(serverAddr, authToken, port, sub, tunnelType)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "\n  Error en túnel :%s — %v\n", port, err)
-			fmt.Println("  Reintentando en 5 segundos...")
-			time.Sleep(5 * time.Second)
-			continue
-		}
-		if url != initialURL {
-			fmt.Printf("\n  URL actualizada para :%s → %s\n", port, url)
-		}
+		// Bloquea sirviendo streams hasta que la sesión se cierre.
 		serveStreams(sess, port)
 		fmt.Printf("\n  Conexión perdida para :%s. Reconectando en 3 segundos...\n", port)
 		time.Sleep(3 * time.Second)
+
+		// Reconexión: ahora sí abrimos una conexión nueva, porque la
+		// anterior ya está cerrada y liberada en el servidor.
+		for {
+			newSess, url, err := connectTunnel(serverAddr, authToken, port, subdomain, tunnelType)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "\n  Error en túnel :%s — %v\n", port, err)
+				fmt.Println("  Reintentando en 5 segundos...")
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			if url != initialURL {
+				fmt.Printf("\n  URL actualizada para :%s → %s\n", port, url)
+			}
+			sess = newSess
+			break
+		}
 	}
 }
 
