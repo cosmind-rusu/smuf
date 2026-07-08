@@ -8,7 +8,7 @@
   <sub>SELF-HOSTED · OPEN SOURCE · WRITTEN IN GO</sub>
   <br/><br/>
 
-  [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
+  [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://go.dev)
   [![License: MIT](https://img.shields.io/badge/License-MIT-E53E3E?style=flat-square)](LICENSE)
   [![Self-hosted](https://img.shields.io/badge/self--hosted-✓-E53E3E?style=flat-square)]()
   [![yamux](https://img.shields.io/badge/yamux-multiplexing-656a76?style=flat-square)](https://github.com/hashicorp/yamux)
@@ -43,7 +43,7 @@ docker compose up -d
 
 ### Opción C: Compilar desde código
 
-Necesitas [Go](https://go.dev/dl/) 1.21+.
+Necesitas [Go](https://go.dev/dl/) 1.25+.
 
 ```bash
 git clone https://github.com/cdrusu/smuf.git && cd smuf
@@ -113,7 +113,7 @@ Todo por variables de entorno (o archivo `.env` junto al ejecutable).
 | Variable | Default | Descripción |
 |---|---|---|
 | `SMUF_DOMAIN` | `localhost` | Tu dominio base |
-| `SMUF_AUTH_TOKEN` | — | Token secreto (**recomendado en producción**) |
+| `SMUF_AUTH_TOKEN` | — | Token secreto (**obligatorio si expones el servidor a internet**: sin él, cualquiera puede crear túneles) |
 | `SMUF_CONTROL_PORT` | `7000` | Puerto donde los clientes se conectan |
 | `SMUF_HTTP_PORT` | `8080` | Puerto HTTP público |
 | `SMUF_HTTPS` | `false` | HTTPS automático con Let's Encrypt |
@@ -199,7 +199,7 @@ smuf/
 
 ## Contribuir
 
-¿Bug o idea? Abre un [issue](../../issues) o manda un pull request.
+¿Bug o idea? Abre un [issue](../../issues) o manda un pull request. Mira [CONTRIBUTING.md](CONTRIBUTING.md) para el flujo de trabajo.
 
 ---
 
