@@ -119,7 +119,8 @@ Todo por variables de entorno (o archivo `.env` junto al ejecutable).
 | `SMUF_HTTPS` | `false` | HTTPS automático con Let's Encrypt |
 | `SMUF_HTTPS_PORT` | `443` | Puerto HTTPS |
 | `SMUF_ACME_EMAIL` | — | Email para avisos de certificado |
-| `SMUF_MAX_CONNS_PER_IP` | `5` | Límite de túneles por IP |
+| `SMUF_MAX_CONNS_PER_IP` | `5` | Límite de túneles concurrentes por IP |
+| `SMUF_CONN_RATE_PER_MIN` | `30` | Intentos de conexión por IP por minuto (frena ráfagas de conectar/desconectar) |
 | `SMUF_HANDSHAKE_TIMEOUT` | `10s` | Timeout del handshake |
 | `SMUF_TCP_PORT_RANGE` | — | Rango de puertos TCP públicos (ej: `20000-30000`) |
 

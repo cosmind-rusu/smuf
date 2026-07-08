@@ -98,6 +98,7 @@ func main() {
 		publicTLSPort:    envOr("SMUF_PUBLIC_HTTPS_PORT", ""),
 		authToken:        os.Getenv("SMUF_AUTH_TOKEN"),
 		maxConnsPerIP:    envInt("SMUF_MAX_CONNS_PER_IP", 5),
+		connRatePerMin:   envInt("SMUF_CONN_RATE_PER_MIN", 30),
 		handshakeTimeout: envDuration("SMUF_HANDSHAKE_TIMEOUT", 10*time.Second),
 		tcpEnabled:       tcpRange != "" && tcpStart > 0 && tcpEnd >= tcpStart,
 		tcpPortStart:     tcpStart,
@@ -106,6 +107,14 @@ func main() {
 
 	registry := tunnel.NewRegistry()
 	rateLimiter := newIPRateLimiter(cfg.maxConnsPerIP)
+	connRateLimiter := newConnRateAttemptLimiter(cfg.connRatePerMin, time.Minute)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			connRateLimiter.sweep()
+		}
+	}()
 	var tcpAllocator *tcpPortAllocator
 	if cfg.tcpEnabled {
 		tcpAllocator = newTCPPortAllocator(cfg.tcpPortStart, cfg.tcpPortEnd)
@@ -120,7 +129,7 @@ func main() {
 
 	var wg sync.WaitGroup
 	go func() {
-		startControl(ln, cfg, registry, rateLimiter, tcpAllocator, &wg)
+		startControl(ln, cfg, registry, rateLimiter, connRateLimiter, tcpAllocator, &wg)
 	}()
 
 	quit := make(chan os.Signal, 1)
@@ -149,7 +158,8 @@ Variables de entorno:
   SMUF_HTTPS_PORT          Puerto HTTPS (default: 443)
   SMUF_ACME_EMAIL          Email para Let's Encrypt
   SMUF_CONTROL_PORT        Puerto de control (default: 7000)
-  SMUF_MAX_CONNS_PER_IP    Límite de túneles por IP (default: 5)
+  SMUF_MAX_CONNS_PER_IP    Límite de túneles concurrentes por IP (default: 5)
+  SMUF_CONN_RATE_PER_MIN   Intentos de conexión por IP por minuto (default: 30)
 
 La configuración se guarda automáticamente en tu perfil de usuario al usar --setup.`)
 }
@@ -174,6 +184,7 @@ type serverConfig struct {
 	publicTLSPort    string
 	authToken        string
 	maxConnsPerIP    int
+	connRatePerMin   int
 	handshakeTimeout time.Duration
 	// TCP puro
 	tcpEnabled       bool
@@ -203,6 +214,60 @@ func (r *ipRateLimiter) acquire(ip string) bool {
 	}
 	r.conns[ip]++
 	return true
+}
+
+// connRateAttemptLimiter limita cuántos *intentos* de conexión nuevos acepta
+// por IP en una ventana de tiempo, independientemente de cuántas estén
+// activas a la vez. ipRateLimiter (arriba) sólo limita conexiones
+// concurrentes, así que no frena a un cliente que abre y cierra conexiones
+// rápidamente en ráfaga.
+type connRateAttemptLimiter struct {
+	mu       sync.Mutex
+	attempts map[string][]time.Time
+	limit    int
+	window   time.Duration
+}
+
+func newConnRateAttemptLimiter(limit int, window time.Duration) *connRateAttemptLimiter {
+	return &connRateAttemptLimiter{
+		attempts: make(map[string][]time.Time),
+		limit:    limit,
+		window:   window,
+	}
+}
+
+func (r *connRateAttemptLimiter) allow(ip string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-r.window)
+
+	kept := r.attempts[ip][:0]
+	for _, t := range r.attempts[ip] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= r.limit {
+		r.attempts[ip] = kept
+		return false
+	}
+	r.attempts[ip] = append(kept, now)
+	return true
+}
+
+// sweep elimina IPs sin intentos recientes para no crecer sin límite en
+// despliegues de larga duración con muchas IPs distintas.
+func (r *connRateAttemptLimiter) sweep() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cutoff := time.Now().Add(-r.window)
+	for ip, times := range r.attempts {
+		if len(times) == 0 || times[len(times)-1].Before(cutoff) {
+			delete(r.attempts, ip)
+		}
+	}
 }
 
 // tcpPortAllocator gestiona un rango de puertos TCP públicos para túneles puros.
@@ -263,7 +328,7 @@ func (r *ipRateLimiter) release(ip string) {
 }
 
 // startControl acepta conexiones TCP de clientes smuf y las registra como túneles.
-func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, rateLimiter *ipRateLimiter, tcpAllocator *tcpPortAllocator, wg *sync.WaitGroup) {
+func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, rateLimiter *ipRateLimiter, connRateLimiter *connRateAttemptLimiter, tcpAllocator *tcpPortAllocator, wg *sync.WaitGroup) {
 	defer ln.Close()
 
 	authStatus := "disabled"
@@ -287,8 +352,14 @@ func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, 
 			return
 		}
 
-		// Rate limiting por IP
+		// Rate limiting por IP: primero la tasa de intentos (ráfagas), luego el
+		// tope de conexiones concurrentes.
 		ip := extractIP(conn.RemoteAddr().String())
+		if !connRateLimiter.allow(ip) {
+			logger.Error("connection rate limit exceeded for IP %s", ip)
+			conn.Close()
+			continue
+		}
 		if !rateLimiter.acquire(ip) {
 			logger.Error("rate limit exceeded for IP %s", ip)
 			conn.Close()
@@ -395,7 +466,7 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry, tc
 	if requestedSub != "" {
 		id = requestedSub
 	} else {
-		id, err = newID()
+		id, err = newUniqueID(registry)
 		if err != nil {
 			logger.Error("failed to generate tunnel ID: %v", err)
 			fmt.Fprintf(conn, "ERR internal error\n")
@@ -868,11 +939,28 @@ func isValidSubdomain(s string) bool {
 }
 
 func newID() (string, error) {
-	b := make([]byte, 4) // 32 bits = 8 hex chars, suficiente para uso personal
+	b := make([]byte, 6) // 48 bits = 12 hex chars: colisión insignificante incluso con miles de túneles activos
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// newUniqueID genera un ID y lo verifica contra el registry para descartar
+// la (muy improbable) colisión, evitando que un ID nuevo pise silenciosamente
+// una entrada existente en el registry.
+func newUniqueID(registry *tunnel.Registry) (string, error) {
+	const maxAttempts = 5
+	for i := 0; i < maxAttempts; i++ {
+		id, err := newID()
+		if err != nil {
+			return "", err
+		}
+		if !registry.Has(id) {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("no se pudo generar un ID único tras %d intentos", maxAttempts)
 }
 
 func envOr(key, fallback string) string {
