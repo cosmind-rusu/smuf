@@ -1,424 +1,833 @@
 <!doctype html>
-<!-- REWRITTEN: simple landing, valores Fácil/Rápido/Seguro -->
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>smuf — túneles HTTP self-hosted</title>
     <meta
       name="description"
       content="smuf te da una URL pública para tu localhost en segundos. Open source, self-hosted y escrito en Go."
     />
+    <link rel="icon" href="logo.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="icon" href="logo.svg" type="image/svg+xml" />
     <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              hcpDark: "#15181e",
-              hcpDarker: "#0d0e12",
-              hcpLight: "#f1f2f3",
-              hcpGray: "#656a76",
-              hcpTextDark: "#efeff1",
-              hcpTextSoft: "#d5d7db",
-              logoRed: "#e53e3e",
-              logoRedDeep: "#731e25",
-              terraform: "#7b42bc",
-              vault: "#ffcf25",
-              waypoint: "#14c6cb",
-              linkBlue: "#2264d6",
-              actionBlue: "#1060ff"
-            },
-            boxShadow: {
-              whisper:
-                "rgba(97,104,117,0.05) 0px 1px 1px, rgba(97,104,117,0.05) 0px 2px 2px"
-            },
-            maxWidth: {
-              content: "1150px"
-            }
-          }
-        }
-      };
-    </script>
+    <link rel="stylesheet" href="tokens.css" />
     <style>
-      :root {
-        --focus: #e53e3e;
-      }
+      /* Hallmark · genre: modern-minimal · macrostructure: Narrative Workflow · theme: Cobalt · enrichment: none · nav: N13 (adapted, command menu) · footer: Ft4 */
+
+      * { box-sizing: border-box; }
+      html, body { overflow-x: clip; }
+      html { scroll-behavior: smooth; }
+
       body {
-        font-family: "Manrope", "Segoe UI", system-ui, sans-serif;
+        margin: 0;
+        background: var(--color-paper);
+        color: var(--color-ink-2);
+        font-family: var(--font-body);
+        font-weight: 400;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
       }
-      .brand-heading {
-        font-family: "Manrope", "HashiCorp Sans", "Segoe UI", system-ui, sans-serif;
-        font-feature-settings: "kern" 1;
+
+      h1, h2, h3 {
+        font-family: var(--font-display);
+        color: var(--color-ink);
+        font-weight: 600;
+        line-height: 1.08;
+        letter-spacing: -0.02em;
+        margin: 0;
+        overflow-wrap: anywhere;
+        min-width: 0;
       }
-      .mono-ui {
-        font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+      p { margin: 0; }
+
+      a { color: inherit; text-decoration: none; }
+
+      .container {
+        max-width: 72rem;
+        margin-inline: auto;
+        padding-inline: clamp(1.25rem, 4vw, 2.5rem);
       }
-      .focus-ring:focus-visible {
-        outline: 3px solid var(--focus);
+
+      .mono {
+        font-family: var(--font-mono);
+      }
+
+      .visually-hidden {
+        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+      }
+
+      a:focus-visible,
+      button:focus-visible,
+      input:focus-visible {
+        outline: 3px solid var(--color-focus);
         outline-offset: 2px;
       }
-      .hero-grid {
-        background-image:
-          linear-gradient(rgba(178, 182, 189, 0.08) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(178, 182, 189, 0.08) 1px, transparent 1px);
-        background-size: 32px 32px;
+
+      /* ---------- reveal ---------- */
+      /* content is visible by default; JS opts elements into the reveal effect
+         once it confirms it can also flip them back on scroll */
+      .js .reveal {
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity var(--dur-long) var(--ease-out),
+                    transform var(--dur-long) var(--ease-out);
+        transition-delay: calc(var(--i, 0) * 70ms);
       }
-      .reveal-up {
-        animation: reveal-up 0.7s ease-out both;
+      .reveal.is-in { opacity: 1; transform: none; }
+
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        .reveal { transition: opacity 150ms linear !important; transform: none !important; opacity: 1 !important; }
       }
-      @keyframes reveal-up {
-        from {
-          opacity: 0;
-          transform: translateY(14px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+
+      /* ---------- buttons ---------- */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        height: 44px;
+        padding-inline: 1.25rem;
+        border-radius: var(--radius-btn);
+        font-family: var(--font-body);
+        font-weight: 600;
+        font-size: var(--text-sm);
+        white-space: nowrap;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: background-color var(--dur-short) var(--ease-out),
+                    border-color var(--dur-short) var(--ease-out),
+                    transform var(--dur-micro) var(--ease-out);
       }
-      .tunnel-wrap {
-        position: relative;
-        border-radius: 8px;
-        overflow: hidden;
-        background: radial-gradient(ellipse at 50% 100%, #250f14 0%, #120d11 60%, #0d0e12 100%);
-        padding: 28px 24px 20px;
+      .btn:active { transform: translateY(1px); }
+      .btn--primary {
+        background: var(--color-accent);
+        color: var(--color-accent-ink);
       }
-      .flow-track {
-        position: relative;
-        height: 3px;
-        background: linear-gradient(90deg, transparent 0%, rgba(229,62,62,0.15) 15%, rgba(229,62,62,0.15) 85%, transparent 100%);
-        border-radius: 9999px;
+      .btn--primary:hover { background: var(--color-accent-hover); }
+      .btn--ghost {
+        background: transparent;
+        border-color: var(--color-rule-2);
+        color: var(--color-ink);
+      }
+      .btn--ghost:hover { border-color: var(--color-accent); color: var(--color-accent); }
+      .btn--on-graphite {
+        background: var(--color-graphite-2);
+        border-color: var(--color-graphite-rule);
+        color: var(--color-on-graphite);
+      }
+      .btn--on-graphite:hover { border-color: var(--color-accent); color: var(--color-accent); }
+
+      /* ============ NAV ============ */
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: var(--z-sticky);
+        border-bottom: 1px solid var(--color-rule);
+        background: oklch(98.5% 0.004 250 / 0.86);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+      .nav__inner {
+        max-width: 72rem;
+        margin-inline: auto;
+        padding-inline: clamp(1.25rem, 4vw, 2.5rem);
+        height: 64px;
+        display: flex;
+        align-items: center;
+        gap: var(--space-lg);
+      }
+      .nav__brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: var(--text-md);
+        color: var(--color-ink);
+        white-space: nowrap;
+      }
+      .nav__brand img { width: 24px; height: 24px; }
+
+      .searchpill {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        height: 38px;
+        padding: 0 0.5rem 0 0.85rem;
+        background: var(--color-paper-2);
+        border: 1px solid var(--color-rule);
+        border-radius: var(--radius-pill);
+        color: var(--color-muted);
+        font-size: var(--text-sm);
+        cursor: pointer;
+        transition: border-color var(--dur-short) var(--ease-out);
         flex: 1;
-        margin: 0 6px;
-        overflow: hidden;
+        max-width: 20rem;
+        min-width: 0;
       }
-      .flow-track::before {
-        content: '';
+      .searchpill:hover { border-color: var(--color-rule-2); }
+      .searchpill__text {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .searchpill__kbd {
+        margin-left: auto;
+        display: flex;
+        gap: 0.2rem;
+        flex-shrink: 0;
+      }
+      .searchpill kbd, .cmdk kbd {
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        background: var(--color-paper);
+        border: 1px solid var(--color-rule-2);
+        border-radius: 4px;
+        padding: 0.05rem 0.35rem;
+        color: var(--color-muted);
+      }
+
+      .nav__right {
+        display: flex;
+        align-items: center;
+        gap: var(--space-lg);
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+      .nav__link {
+        font-size: var(--text-sm);
+        font-weight: 500;
+        color: var(--color-ink-2);
+        white-space: nowrap;
+        border-bottom: 1px solid transparent;
+        transition: border-color var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out);
+      }
+      .nav__link:hover { color: var(--color-ink); border-color: var(--color-accent); }
+
+      .nav__links {
+        display: flex;
+        align-items: center;
+        gap: var(--space-lg);
+      }
+      @media (max-width: 52rem) {
+        .nav__links { display: none; }
+      }
+      @media (max-width: 30rem) {
+        .searchpill__text { display: none; }
+        .searchpill { max-width: none; width: 40px; height: 40px; padding: 0; justify-content: center; }
+        .searchpill__kbd { display: none; }
+      }
+
+      /* ============ command palette ============ */
+      .cmdk {
+        position: fixed;
+        inset: 0;
+        z-index: var(--z-modal);
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity var(--dur-short) var(--ease-out), visibility var(--dur-short) var(--ease-out);
+      }
+      .cmdk.is-open { opacity: 1; visibility: visible; }
+      .cmdk__backdrop {
         position: absolute;
         inset: 0;
-        background: repeating-linear-gradient(90deg, rgba(229,62,62,0.35) 0px, rgba(229,62,62,0.35) 8px, transparent 8px, transparent 16px);
+        background: oklch(20% 0.02 258 / 0.45);
       }
-      .flow-packet {
+      .cmdk__panel {
         position: absolute;
-        top: 50%;
-        width: 10px;
-        height: 10px;
-        border-radius: 9999px;
-        background: #e53e3e;
-        box-shadow: 0 0 12px rgba(229,62,62,0.9), 0 0 24px rgba(229,62,62,0.45);
-        transform: translateY(-50%);
-        animation: flow-travel 2.4s cubic-bezier(0.4,0,0.6,1) infinite;
-        left: -12px;
+        top: 14vh;
+        left: 50%;
+        transform: translateX(-50%) translateY(-8px) scale(0.98);
+        width: min(32rem, calc(100vw - 2rem));
+        max-height: 70vh;
+        background: var(--color-paper);
+        border: 1px solid var(--color-rule);
+        border-radius: var(--radius-card);
+        box-shadow: 0 12px 32px oklch(24% 0.02 258 / 0.18);
+        overflow: hidden;
+        transition: transform var(--dur-short) var(--ease-out);
+        display: flex;
+        flex-direction: column;
       }
-      .flow-packet:nth-child(2) { animation-delay: 0.8s; }
-      .flow-packet:nth-child(3) { animation-delay: 1.6s; }
-      .flow-node {
+      .cmdk.is-open .cmdk__panel { transform: translateX(-50%) translateY(0) scale(1); }
+      .cmdk__field {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.9rem 1rem;
+        border-bottom: 1px solid var(--color-rule);
+      }
+      .cmdk__field input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        font: 400 var(--text-md) / 1.4 var(--font-body);
+        background: transparent;
+        color: var(--color-ink);
+      }
+      .cmdk__results { padding: 0.5rem; overflow-y: auto; }
+      .cmdk__group {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-muted);
+        padding: 0.5rem 0.6rem 0.25rem;
+      }
+      .cmdk__item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: 0.6rem 0.75rem;
+        border-radius: 6px;
+        border: 0;
+        background: transparent;
+        color: var(--color-ink-2);
+        font: 500 var(--text-sm) / 1.4 var(--font-body);
+        text-align: left;
+        cursor: pointer;
+      }
+      .cmdk__item.is-active, .cmdk__item:hover { background: var(--color-paper-2); color: var(--color-ink); }
+      .cmdk__foot {
+        display: flex;
+        gap: 1rem;
+        padding: 0.6rem 1rem;
+        border-top: 1px solid var(--color-rule);
+        font-size: var(--text-xs);
+        color: var(--color-muted);
+      }
+      .cmdk__foot span { display: flex; align-items: center; gap: 0.3rem; }
+
+      /* ============ hero (0.0) ============ */
+      .hero {
+        padding-block: clamp(var(--space-2xl), 8vw, var(--space-4xl)) var(--space-2xl);
+      }
+      .hero__grid {
+        display: grid;
+        grid-template-columns: 1.15fr 1fr;
+        gap: var(--space-2xl);
+        align-items: center;
+      }
+      .hero__grid > div { min-width: 0; }
+      @media (max-width: 60rem) {
+        .hero__grid { grid-template-columns: 1fr; }
+      }
+      .hero h1 { font-size: var(--text-display); }
+      .hero__lede {
+        margin-top: var(--space-md);
+        max-width: 42ch;
+        font-size: var(--text-md);
+        color: var(--color-ink-2);
+      }
+      .hero__ctas {
+        margin-top: var(--space-lg);
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-sm);
+      }
+
+      /* code card — no fake window chrome, typographic frame only */
+      .code-card {
+        background: var(--color-graphite);
+        border-radius: var(--radius-card);
+        overflow: hidden;
+        border: 1px solid var(--color-graphite-rule);
+        min-width: 0;
+      }
+      .code-card__label {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.7rem 1rem;
+        border-bottom: 1px solid var(--color-graphite-rule);
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        letter-spacing: 0.04em;
+        color: var(--color-on-graphite-muted);
+      }
+      .code-card__copy {
+        background: transparent;
+        border: 1px solid var(--color-graphite-rule);
+        color: var(--color-on-graphite-muted);
+        border-radius: 4px;
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        padding: 0.2rem 0.5rem;
+        cursor: pointer;
+        transition: border-color var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out);
+      }
+      .code-card__copy:hover { border-color: var(--color-accent); color: var(--color-accent); }
+      .code-card pre {
+        margin: 0;
+        padding: 1.25rem;
+        max-width: 100%;
+        font-family: var(--font-mono);
+        font-size: 0.85rem;
+        line-height: 1.7;
+        overflow-x: auto;
+        color: var(--color-on-graphite);
+      }
+      .tok-muted { color: var(--color-on-graphite-muted); }
+      .tok-accent { color: oklch(70% 0.17 256); font-weight: 600; }
+      .tok-status { color: oklch(78% 0.16 150); font-weight: 500; }
+
+      /* ============ value strip ============ */
+      .values {
+        padding-block: var(--space-2xl);
+        border-top: 1px solid var(--color-rule);
+      }
+      .values__row {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr 0.9fr;
+        gap: 0;
+      }
+      .values__row > div { min-width: 0; }
+      .values__item {
+        padding: var(--space-md) var(--space-lg) var(--space-md) 0;
+        border-inline-start: 1px solid var(--color-rule);
+        padding-inline-start: var(--space-lg);
+      }
+      .values__item:first-child { border-inline-start: none; padding-inline-start: 0; }
+      @media (max-width: 45rem) {
+        .values__row { grid-template-columns: 1fr; gap: var(--space-md); }
+        .values__item { border-inline-start: none !important; padding-inline-start: 0 !important; border-top: 1px solid var(--color-rule); padding-top: var(--space-md); }
+        .values__item:first-child { border-top: none; padding-top: 0; }
+      }
+      .values__item h3 {
+        font-size: var(--text-lg);
+      }
+      .values__item p {
+        margin-top: var(--space-2xs);
+        font-size: var(--text-sm);
+        color: var(--color-muted);
+      }
+      .values__item code {
+        font-family: var(--font-mono);
+        font-size: 0.82em;
+        background: var(--color-paper-2);
+        border-radius: 4px;
+        padding: 0.05rem 0.35rem;
+      }
+
+      /* ============ diagram (how) ============ */
+      .how {
+        padding-block: var(--space-2xl);
+        border-top: 1px solid var(--color-rule);
+      }
+      .how__head { max-width: 40rem; }
+      .how__head h2 { font-size: var(--text-2xl); }
+      .how__head p { margin-top: var(--space-sm); color: var(--color-muted); font-size: var(--text-md); }
+
+      .diagram {
+        margin-top: var(--space-2xl);
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+      }
+      .diagram__node {
+        flex-shrink: 0;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 8px;
-        flex-shrink: 0;
+        gap: var(--space-2xs);
+        text-align: center;
+        width: 8.5rem;
       }
-      .flow-node-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 8px;
-        border: 1px solid rgba(229,62,62,0.45);
-        background: #1d0d12;
+      .diagram__icon {
+        width: 3rem;
+        height: 3rem;
+        border-radius: var(--radius-card);
+        border: 1px solid var(--color-rule-2);
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 0 16px rgba(229,62,62,0.12);
+        background: var(--color-paper-2);
       }
-      .flow-node-icon svg {
-        width: 22px;
-        height: 22px;
-        stroke: #e53e3e;
-        fill: none;
-        stroke-width: 1.5;
-        stroke-linecap: round;
-        stroke-linejoin: round;
+      .diagram__node--mid .diagram__icon {
+        border-color: var(--color-accent);
+        box-shadow: 0 0 0 3px oklch(58% 0.20 256 / 0.08);
       }
-      .flow-node-label {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.8px;
-        color: #656a76;
+      .diagram__icon svg { width: 1.4rem; height: 1.4rem; stroke: var(--color-ink); fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+      .diagram__label { font-size: var(--text-sm); font-weight: 600; color: var(--color-ink); }
+      .diagram__sub { font-family: var(--font-mono); font-size: 0.7rem; color: var(--color-muted); overflow-wrap: anywhere; }
+
+      .diagram__link {
+        flex: 1;
+        min-width: 1.5rem;
+        height: 1px;
+        background: repeating-linear-gradient(90deg, var(--color-rule-2) 0 6px, transparent 6px 11px);
+        position: relative;
       }
-      .flow-node-sub {
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 10px;
-        color: #efeff1;
-        opacity: 0.75;
+      .diagram__link::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 50%;
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--color-accent);
+        transform: translateY(-50%);
       }
-      @keyframes flow-travel {
-        0%   { left: -12px; opacity: 0; }
-        8%   { opacity: 1; }
-        92%  { opacity: 1; }
-        100% { left: calc(100% + 12px); opacity: 0; }
+      @media (max-width: 40rem) {
+        .diagram { flex-direction: column; }
+        .diagram__link { width: 1px; height: 2rem; }
+        .diagram__link::after { right: 50%; top: auto; bottom: 0; transform: translateX(50%); }
       }
+
+      /* ============ quickstart — the one graphite band ============ */
+      .quickstart {
+        background: var(--color-graphite);
+        color: var(--color-on-graphite);
+        padding-block: var(--space-2xl);
+      }
+      .quickstart__head { max-width: 40rem; }
+      .quickstart__head h2 { color: var(--color-on-graphite); font-size: var(--text-2xl); }
+      .quickstart__head p { margin-top: var(--space-sm); color: var(--color-on-graphite-muted); font-size: var(--text-md); }
+
+      .stage {
+        display: grid;
+        grid-template-columns: 20rem 1fr;
+        gap: var(--space-xl);
+        padding-block: var(--space-xl);
+        border-top: 1px solid var(--color-graphite-rule);
+      }
+      .stage > div { min-width: 0; }
+      @media (max-width: 55rem) {
+        .stage { grid-template-columns: 1fr; gap: var(--space-md); }
+      }
+      .stage h3 {
+        color: var(--color-on-graphite);
+        font-size: var(--text-xl);
+      }
+      .stage p {
+        margin-top: var(--space-2xs);
+        color: var(--color-on-graphite-muted);
+        font-size: var(--text-sm);
+        max-width: 32ch;
+      }
+      .stage .code-card { background: var(--color-graphite-2); }
+      .stage .code-card__label, .stage .code-card { border-color: var(--color-graphite-rule); }
+
+      .quickstart__cta {
+        margin-top: var(--space-lg);
+        padding-top: var(--space-lg);
+        border-top: 1px solid var(--color-graphite-rule);
+      }
+
+      /* ============ footer — Ft4 dense typographic ============ */
+      .foot {
+        border-top: 1px solid var(--color-rule);
+        padding-block: var(--space-lg);
+      }
+      .foot p {
+        font-family: var(--font-mono);
+        font-size: var(--text-xs);
+        color: var(--color-muted);
+        line-height: 1.9;
+        max-width: 68ch;
+      }
+      .foot a { color: var(--color-ink-2); border-bottom: 1px solid var(--color-rule-2); }
+      .foot a:hover { color: var(--color-accent); border-color: var(--color-accent); }
     </style>
   </head>
-  <body class="bg-[#0d0e12] text-hcpTextDark antialiased">
+  <body>
 
-    <!-- HEADER -->
-    <header class="sticky top-0 z-40 border-b border-[#e53e3e22] bg-[#0d0e12]/95 backdrop-blur">
-      <div class="mx-auto flex w-full max-w-content items-center justify-between px-6 py-4 lg:px-10">
-        <a href="#" class="focus-ring inline-flex items-center gap-2.5 rounded-sm">
-          <img src="logo.svg" alt="smuf" class="h-8 w-8" />
-          <span class="brand-heading text-xl font-extrabold tracking-tight text-white">smuf</span>
+    <!-- NAV -->
+    <header class="nav" id="top">
+      <div class="nav__inner">
+        <a class="nav__brand" href="#top">
+          <img src="logo.svg" alt="" />
+          smuf
         </a>
-        <nav class="hidden items-center gap-8 text-[15px] font-medium text-hcpTextSoft md:flex">
-          <a href="#values" class="focus-ring rounded-sm transition-colors hover:text-white">Ventajas</a>
-          <a href="#how" class="focus-ring rounded-sm transition-colors hover:text-white">Cómo funciona</a>
-          <a href="#start" class="focus-ring rounded-sm transition-colors hover:text-white">Empezar</a>
-        </nav>
-        <a
-          href="https://github.com/cosmind-rusu/smuf"
-          target="_blank"
-          class="focus-ring hidden items-center gap-2 rounded-[5px] border border-[#e53e3e55] bg-[#1e0d11] px-4 py-2 text-sm font-semibold text-[#ffc8c8] shadow-whisper transition-colors hover:bg-[#2a1015] hover:text-white md:inline-flex"
-        >
-          <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.463-1.11-1.463-.907-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
-          GitHub
-        </a>
+        <button class="searchpill" id="searchpill" aria-haspopup="dialog" aria-label="Abrir menú de comandos">
+          <span class="searchpill__text">Saltar a…</span>
+          <span class="searchpill__kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
+        </button>
+        <div class="nav__right">
+          <nav class="nav__links">
+            <a class="nav__link" href="#values">Ventajas</a>
+            <a class="nav__link" href="#how">Cómo funciona</a>
+            <a class="nav__link" href="#start">Empezar</a>
+          </nav>
+          <a class="btn btn--primary" href="https://github.com/cosmind-rusu/smuf" target="_blank" rel="noopener">GitHub</a>
+        </div>
       </div>
     </header>
+
+    <!-- command palette -->
+    <div class="cmdk" id="cmdk" aria-hidden="true">
+      <div class="cmdk__backdrop" data-cmdk-close></div>
+      <div class="cmdk__panel" role="dialog" aria-modal="true" aria-label="Menú de comandos">
+        <div class="cmdk__field">
+          <input id="cmdk-input" type="text" placeholder="Saltar a una sección o ejecutar un comando…" autocomplete="off" />
+          <kbd>esc</kbd>
+        </div>
+        <div class="cmdk__results" id="cmdk-results">
+          <p class="cmdk__group">Ir a</p>
+          <button class="cmdk__item is-active" data-href="#top">Inicio</button>
+          <button class="cmdk__item" data-href="#values">Ventajas</button>
+          <button class="cmdk__item" data-href="#how">Cómo funciona</button>
+          <button class="cmdk__item" data-href="#start">Empezar</button>
+          <p class="cmdk__group">Acciones</p>
+          <button class="cmdk__item" data-copy="./smuf-server">Copiar: instalar servidor</button>
+          <button class="cmdk__item" data-copy="SMUF_SERVER=tuservidor.com:7000 ./smuf 3000">Copiar: abrir túnel</button>
+          <button class="cmdk__item" data-external="https://github.com/cosmind-rusu/smuf">Abrir en GitHub ↗</button>
+        </div>
+        <div class="cmdk__foot">
+          <span><kbd>↑</kbd><kbd>↓</kbd> navegar</span>
+          <span><kbd>↵</kbd> abrir</span>
+          <span><kbd>esc</kbd> cerrar</span>
+        </div>
+      </div>
+    </div>
 
     <main>
 
       <!-- HERO -->
-      <section class="relative overflow-hidden bg-gradient-to-b from-[#1c0a0f] via-[#130c10] to-[#0d0e12] pb-20 pt-24">
-        <div class="hero-grid pointer-events-none absolute inset-0 opacity-30"></div>
-        <div class="pointer-events-none absolute left-1/2 top-0 h-80 w-80 -translate-x-1/2 rounded-full bg-[#e53e3e28] blur-3xl"></div>
-
-        <div class="relative mx-auto w-full max-w-content px-6 lg:px-10">
-          <div class="mx-auto max-w-3xl text-center reveal-up">
-            <div class="mb-6 inline-flex items-center gap-2 rounded-[5px] border border-[#e53e3e55] bg-[#2d1019] px-3 py-1.5 text-sm font-medium text-[#ffb3b3]">
-              <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-logoRed"></span>
-              Open source · Gratis · Tuyo para siempre
-            </div>
-            <h1 class="brand-heading text-5xl font-extrabold leading-[1.1] text-white md:text-6xl lg:text-7xl">
-              Comparte tu app local<br class="hidden sm:block" /> con el mundo.
-            </h1>
-            <p class="mx-auto mt-6 max-w-xl text-xl leading-relaxed text-hcpTextSoft">
-              Un solo comando y tu app tiene una URL pública que cualquiera puede visitar.
-              Sin registros, sin límites, sin que tus datos salgan de tu control.
+      <section class="hero container">
+        <div class="hero__grid">
+          <div class="reveal" style="--i:0">
+            <h1>De tu terminal al mundo, en un comando.</h1>
+            <p class="hero__lede">
+              smuf abre un túnel entre tu servidor y tu máquina: tu app local recibe una URL pública real,
+              sin registros, sin límites de uso y sin que tus datos salgan de tu propia infraestructura.
             </p>
-            <div class="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <a
-                href="#start"
-                class="focus-ring inline-flex w-full items-center justify-center rounded-[5px] bg-logoRed px-6 py-3 text-base font-bold text-white shadow-whisper transition-colors hover:bg-[#d23535] sm:w-auto"
-              >
-                Empezar en 2 minutos
-              </a>
-              <a
-                href="#how"
-                class="focus-ring inline-flex w-full items-center justify-center gap-2 rounded-[5px] border border-[#e53e3e44] bg-[#1a0d12] px-6 py-3 text-base font-medium text-[#ffcaca] transition-colors hover:bg-[#220f15] sm:w-auto"
-              >
-                Ver cómo funciona
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-              </a>
+            <div class="hero__ctas">
+              <a class="btn btn--primary" href="https://github.com/cosmind-rusu/smuf" target="_blank" rel="noopener">Ver en GitHub</a>
+              <a class="btn btn--ghost" href="#start">Leer la instalación</a>
             </div>
           </div>
 
-          <!-- Terminal hero -->
-          <div class="mx-auto mt-14 max-w-2xl reveal-up" style="animation-delay:0.18s">
-            <div class="rounded-[8px] border border-[#e53e3e3a] bg-[#0d0e12] shadow-[0_0_40px_rgba(229,62,62,0.1)]">
-              <div class="flex items-center gap-2 border-b border-[#e53e3e22] px-4 py-3">
-                <span class="h-3 w-3 rounded-full bg-[#e53e3e]"></span>
-                <span class="h-3 w-3 rounded-full bg-[#731e25]"></span>
-                <span class="h-3 w-3 rounded-full bg-[#3b1219]"></span>
-                <span class="mono-ui ml-3 text-xs text-hcpGray">terminal</span>
+          <div class="reveal" style="--i:1">
+            <div class="code-card">
+              <div class="code-card__label">
+                <span>terminal</span>
+                <button class="code-card__copy" type="button" data-copy-target="hero-cmd">Copiar</button>
               </div>
-              <pre class="mono-ui overflow-x-auto p-5 text-sm leading-7"><code><span class="text-hcpGray">$</span> <span class="text-white">./smuf 3000</span>
+              <pre id="hero-cmd"><span class="tok-muted">$</span> ./smuf 3000
 
-<span class="text-[#e53e3e] font-semibold">Tunnel ready!</span>
+<span class="tok-status">Tunnel ready</span>
 
-<span class="text-hcpGray">Local  </span> <span class="text-hcpTextSoft">→</span> <span class="text-hcpTextSoft">http://localhost:3000</span>
-<span class="text-hcpGray">Public </span> <span class="text-hcpTextSoft">→</span> <span class="text-[#ff8f8f] font-medium">https://a3f1c9.tudominio.com</span>
+<span class="tok-muted">Local  →</span> http://localhost:3000
+<span class="tok-muted">Public →</span> <span class="tok-accent">https://a3f1c9.tudominio.com</span>
 
-<span class="text-hcpGray">Ctrl+C para detener</span></code></pre>
+<span class="tok-muted"># Ctrl+C para detener</span></pre>
             </div>
           </div>
         </div>
       </section>
 
-      <!-- 3 VALORES -->
-      <section id="values" class="bg-[#0f0b0d] py-20">
-        <div class="mx-auto w-full max-w-content px-6 lg:px-10">
-          <div class="grid gap-6 md:grid-cols-3">
-
-            <article class="rounded-[8px] border border-[#e53e3e3a] bg-[#160d11] p-8 shadow-whisper">
-              <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#e53e3e44] bg-[#2a0f14]">
-                <svg class="h-6 w-6" fill="none" stroke="#e53e3e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-                </svg>
-              </div>
-              <h3 class="brand-heading text-2xl font-extrabold text-white">Fácil</h3>
-              <p class="mt-3 text-base leading-relaxed text-hcpTextSoft">
-                Un solo comando: <code class="mono-ui rounded bg-[#0d0e12] px-1.5 py-0.5 text-sm text-[#ff9f9f]">./smuf 3000</code>
-                y recibes al instante una URL que cualquier persona puede visitar. Sin configuraciones raras.
-              </p>
-            </article>
-
-            <article class="rounded-[8px] border border-[#e53e3e3a] bg-[#160d11] p-8 shadow-whisper">
-              <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#e53e3e44] bg-[#2a0f14]">
-                <svg class="h-6 w-6" fill="none" stroke="#e53e3e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
-              </div>
-              <h3 class="brand-heading text-2xl font-extrabold text-white">Rápido</h3>
-              <p class="mt-3 text-base leading-relaxed text-hcpTextSoft">
-                Tu URL está lista en segundos. Sin esperas, sin verificaciones de correo, sin planes de precios.
-                Ejecutas, compartes, listo.
-              </p>
-            </article>
-
-            <article class="rounded-[8px] border border-[#e53e3e3a] bg-[#160d11] p-8 shadow-whisper">
-              <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-[8px] border border-[#e53e3e44] bg-[#2a0f14]">
-                <svg class="h-6 w-6" fill="none" stroke="#e53e3e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
-              </div>
-              <h3 class="brand-heading text-2xl font-extrabold text-white">Seguro</h3>
-              <p class="mt-3 text-base leading-relaxed text-hcpTextSoft">
-                El tráfico va a <strong class="text-white font-semibold">tu propio servidor</strong>, no al de nadie más.
-                Autenticación por token, rate limiting, IDs criptográficos y HTTPS incluido.
-              </p>
-            </article>
-
+      <!-- VALUE STRIP -->
+      <section class="values container" id="values">
+        <div class="values__row">
+          <div class="values__item reveal" style="--i:0">
+            <h3>Fácil</h3>
+            <p>Un solo comando, <code>./smuf 3000</code>, y tienes una URL que cualquiera puede abrir. Sin paneles, sin configuración previa.</p>
+          </div>
+          <div class="values__item reveal" style="--i:1">
+            <h3>Rápido</h3>
+            <p>La URL está lista en segundos. Sin correo de verificación, sin plan de precios, sin cola de espera.</p>
+          </div>
+          <div class="values__item reveal" style="--i:2">
+            <h3>Tuyo</h3>
+            <p>El tráfico entra por tu propio servidor. Token de autenticación, rate limiting e IDs criptográficos de fábrica.</p>
           </div>
         </div>
       </section>
 
       <!-- CÓMO FUNCIONA -->
-      <section id="how" class="bg-[#0d0e12] py-20">
-        <div class="mx-auto w-full max-w-content px-6 lg:px-10">
-          <div class="mx-auto max-w-2xl text-center">
-            <p class="brand-heading text-[13px] font-semibold uppercase tracking-[1.3px] text-hcpGray">cómo funciona</p>
-            <h2 class="brand-heading mt-3 text-4xl font-extrabold leading-[1.15] text-white md:text-5xl">
-              Tu app viaja segura de tu ordenador al mundo.
-            </h2>
-            <p class="mt-4 text-lg leading-relaxed text-hcpTextSoft">
-              smuf hace de puente entre tu máquina y tu servidor. Así el tráfico llega a ti sin pasar por nadie.
-            </p>
+      <section class="how container" id="how">
+        <div class="how__head reveal" style="--i:0">
+          <h2>Tu tráfico no pasa por nadie más.</h2>
+          <p>smuf conecta tu servidor con tu máquina directamente. Lo que entra por la URL pública sale por tu localhost — nada más se sienta en medio.</p>
+        </div>
+        <div class="diagram reveal" style="--i:1">
+          <div class="diagram__node">
+            <div class="diagram__icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+            <span class="diagram__label">Tu ordenador</span>
+            <span class="diagram__sub">localhost:3000</span>
           </div>
-
-          <div class="tunnel-wrap mx-auto mt-12 max-w-3xl border border-[#e53e3e38]">
-            <div style="display:flex;align-items:center;width:100%;">
-              <div class="flow-node">
-                <div class="flow-node-icon">
-                  <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-                </div>
-                <span class="flow-node-label">Tu ordenador</span>
-                <span class="flow-node-sub">localhost:3000</span>
-              </div>
-              <div class="flow-track">
-                <span class="flow-packet"></span>
-                <span class="flow-packet"></span>
-                <span class="flow-packet"></span>
-              </div>
-              <div class="flow-node">
-                <div class="flow-node-icon" style="border-color:rgba(229,62,62,0.75);background:#2a0f14;box-shadow:0 0 20px rgba(229,62,62,0.25);">
-                  <svg viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
-                </div>
-                <span class="flow-node-label">Tu servidor</span>
-                <span class="flow-node-sub">smuf-server</span>
-              </div>
-              <div class="flow-track">
-                <span class="flow-packet"></span>
-                <span class="flow-packet"></span>
-                <span class="flow-packet"></span>
-              </div>
-              <div class="flow-node">
-                <div class="flow-node-icon">
-                  <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                </div>
-                <span class="flow-node-label">Cualquier persona</span>
-                <span class="flow-node-sub">a3f1c9.tudominio.com</span>
-              </div>
-            </div>
-            <div class="mono-ui mt-6 inline-flex items-center gap-2 rounded-[4px] bg-[#0d0e12cc] px-2.5 py-1 text-[11px] text-[#f0a9a9]">
-              <span style="width:6px;height:6px;border-radius:9999px;background:#e53e3e;display:inline-block;box-shadow:0 0 6px #e53e3e;animation:pulse 2s infinite;"></span>
-              Conexión activa y cifrada
-            </div>
+          <div class="diagram__link"></div>
+          <div class="diagram__node diagram__node--mid">
+            <div class="diagram__icon"><svg viewBox="0 0 24 24"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></div>
+            <span class="diagram__label">Tu servidor</span>
+            <span class="diagram__sub">smuf-server</span>
+          </div>
+          <div class="diagram__link"></div>
+          <div class="diagram__node">
+            <div class="diagram__icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+            <span class="diagram__label">Cualquier persona</span>
+            <span class="diagram__sub">a3f1c9.tudominio.com</span>
           </div>
         </div>
       </section>
 
-      <!-- QUICK START -->
-      <section id="start" class="bg-[#0f0b0d] py-20">
-        <div class="mx-auto w-full max-w-content px-6 lg:px-10">
-          <div class="mx-auto max-w-2xl text-center">
-            <p class="brand-heading text-[13px] font-semibold uppercase tracking-[1.3px] text-hcpGray">empezar</p>
-            <h2 class="brand-heading mt-3 text-4xl font-extrabold leading-[1.15] text-white md:text-5xl">
-              En marcha en menos de 2 minutos.
-            </h2>
+      <!-- QUICKSTART — the one graphite band, narrative-workflow stages -->
+      <section class="quickstart" id="start">
+        <div class="container">
+          <div class="quickstart__head reveal" style="--i:0">
+            <h2>Tres pasos, menos de dos minutos.</h2>
+            <p>Nada que instalar además de Go. Nada que registrar.</p>
           </div>
 
-          <div class="mx-auto mt-12 grid max-w-3xl gap-5">
-
-            <div class="flex gap-5 rounded-[8px] border border-[#e53e3e38] bg-[#160d11] p-6 shadow-whisper">
-              <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-logoRed text-sm font-extrabold text-white">1</div>
-              <div class="flex-1">
-                <h3 class="brand-heading text-lg font-bold text-white">Instala smuf en tu servidor</h3>
-                <p class="mt-1 text-sm leading-relaxed text-hcpTextSoft">Descarga y compila. Solo necesitas tener Go instalado.</p>
-                <pre class="mono-ui mt-3 overflow-x-auto rounded-[5px] bg-[#0d0e12] px-4 py-3 text-sm text-hcpTextDark"><code>git clone https://github.com/cosmind-rusu/smuf.git
-cd smuf &amp;&amp; go build -o smuf-server ./cmd/smuf-server
-./smuf-server</code></pre>
-              </div>
+          <div class="stage reveal" style="--i:1">
+            <div>
+              <h3>Instala smuf en tu servidor</h3>
+              <p>Clona el repositorio y compílalo donde vaya a vivir tu túnel.</p>
             </div>
-
-            <div class="flex gap-5 rounded-[8px] border border-[#e53e3e38] bg-[#160d11] p-6 shadow-whisper">
-              <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-logoRed text-sm font-extrabold text-white">2</div>
-              <div class="flex-1">
-                <h3 class="brand-heading text-lg font-bold text-white">Compila el cliente en tu ordenador</h3>
-                <p class="mt-1 text-sm leading-relaxed text-hcpTextSoft">Un solo ejecutable, sin dependencias adicionales.</p>
-                <pre class="mono-ui mt-3 overflow-x-auto rounded-[5px] bg-[#0d0e12] px-4 py-3 text-sm text-hcpTextDark"><code>go build -o smuf ./cmd/smuf</code></pre>
+            <div class="code-card">
+              <div class="code-card__label">
+                <span>bash</span>
+                <button class="code-card__copy" type="button" data-copy-target="stage-1">Copiar</button>
               </div>
+              <pre id="stage-1"><span class="tok-muted">$</span> git clone https://github.com/cosmind-rusu/smuf.git
+<span class="tok-muted">$</span> cd smuf &amp;&amp; go build -o smuf-server ./cmd/smuf-server
+<span class="tok-muted">$</span> ./smuf-server</pre>
             </div>
+          </div>
 
-            <div class="flex gap-5 rounded-[8px] border border-[#e53e3e55] bg-[#1e0d12] p-6 shadow-[0_0_24px_rgba(229,62,62,0.1)]">
-              <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-logoRed text-sm font-extrabold text-white">3</div>
-              <div class="flex-1">
-                <h3 class="brand-heading text-lg font-bold text-white">¡Abre tu túnel!</h3>
-                <p class="mt-1 text-sm leading-relaxed text-hcpTextSoft">Dile a smuf el puerto donde corre tu app. Eso es todo.</p>
-                <pre class="mono-ui mt-3 overflow-x-auto rounded-[5px] bg-[#0d0e12] px-4 py-3 text-sm text-hcpTextDark"><code>SMUF_SERVER=tuservidor.com:7000 ./smuf 3000
-
-<span class="text-[#e53e3e]">→</span> https://a3f1c9.tuservidor.com  <span class="text-hcpGray"># comparte este enlace</span></code></pre>
+          <div class="stage reveal" style="--i:2">
+            <div>
+              <h3>Compila el cliente en tu máquina</h3>
+              <p>Un único ejecutable. Ninguna dependencia adicional que instalar.</p>
+            </div>
+            <div class="code-card">
+              <div class="code-card__label">
+                <span>bash</span>
+                <button class="code-card__copy" type="button" data-copy-target="stage-2">Copiar</button>
               </div>
+              <pre id="stage-2"><span class="tok-muted">$</span> go build -o smuf ./cmd/smuf</pre>
             </div>
+          </div>
 
+          <div class="stage reveal" style="--i:3">
+            <div>
+              <h3>Abre el túnel y comparte</h3>
+              <p>Dile a smuf qué puerto exponer. La URL pública queda lista al instante.</p>
+            </div>
+            <div class="code-card">
+              <div class="code-card__label">
+                <span>bash</span>
+                <button class="code-card__copy" type="button" data-copy-target="stage-3">Copiar</button>
+              </div>
+              <pre id="stage-3"><span class="tok-muted">$</span> SMUF_SERVER=tuservidor.com:7000 ./smuf 3000
+
+<span class="tok-accent">→</span> https://a3f1c9.tuservidor.com  <span class="tok-muted"># comparte este enlace</span></pre>
+            </div>
+          </div>
+
+          <div class="quickstart__cta reveal" style="--i:4">
+            <a class="btn btn--on-graphite" href="https://github.com/cosmind-rusu/smuf" target="_blank" rel="noopener">Leer la documentación en GitHub</a>
           </div>
         </div>
       </section>
 
     </main>
 
-    <!-- FOOTER -->
-    <footer class="border-t border-[#e53e3e22] bg-[#0a0608]">
-      <div class="mx-auto flex w-full max-w-content flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-hcpGray md:flex-row lg:px-10">
-        <div class="flex items-center gap-3">
-          <img src="logo.svg" alt="smuf" class="h-7 w-7 opacity-80" />
-          <div class="flex flex-col leading-tight">
-            <span class="brand-heading text-base font-extrabold text-white">smuf</span>
-            <span class="text-xs text-hcpGray">product by cdrusu</span>
-          </div>
-        </div>
-        <a href="https://github.com/cosmind-rusu/smuf" target="_blank" class="focus-ring rounded-sm text-[#ff8f8f] transition-colors hover:text-white hover:underline">
-          github.com/cosmind-rusu/smuf
-        </a>
+    <!-- FOOTER — Ft4 dense typographic -->
+    <footer class="foot">
+      <div class="container">
+        <p>
+          smuf — túneles HTTP self-hosted, escrito en Go. Código abierto bajo licencia MIT.
+          Producto de cdrusu. <a href="https://github.com/cosmind-rusu/smuf" target="_blank" rel="noopener">github.com/cosmind-rusu/smuf</a>
+        </p>
       </div>
     </footer>
 
+    <script>
+      document.documentElement.classList.add('js');
+
+      // reveal-on-scroll — one orchestrated entrance, no repeats
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+        });
+      }, { threshold: 0.15 });
+      document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+
+      // copy-to-clipboard — silent success, no toast
+      function wireCopy(btn, getText) {
+        btn.addEventListener('click', function () {
+          var text = getText();
+          navigator.clipboard && navigator.clipboard.writeText(text).catch(function () {});
+          var original = btn.textContent;
+          btn.textContent = 'Copiado';
+          setTimeout(function () { btn.textContent = original; }, 1400);
+        });
+      }
+      document.querySelectorAll('[data-copy-target]').forEach(function (btn) {
+        var target = document.getElementById(btn.getAttribute('data-copy-target'));
+        wireCopy(btn, function () { return target ? target.textContent.trim() : ''; });
+      });
+
+      // command palette
+      var cmdk = document.getElementById('cmdk');
+      var input = document.getElementById('cmdk-input');
+      var results = document.getElementById('cmdk-results');
+      var pill = document.getElementById('searchpill');
+      var lastFocused = null;
+
+      function openCmdk() {
+        lastFocused = document.activeElement;
+        cmdk.classList.add('is-open');
+        cmdk.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        setTimeout(function () { input.focus(); }, 0);
+      }
+      function closeCmdk() {
+        cmdk.classList.remove('is-open');
+        cmdk.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        input.value = '';
+        if (lastFocused) lastFocused.focus();
+      }
+      function items() { return Array.prototype.slice.call(results.querySelectorAll('.cmdk__item')).filter(function (i) { return i.style.display !== 'none'; }); }
+      function setActive(idx) {
+        var list = items();
+        list.forEach(function (i) { i.classList.remove('is-active'); });
+        if (list[idx]) list[idx].classList.add('is-active');
+      }
+      function activate(el) {
+        if (!el) return;
+        if (el.dataset.href) { closeCmdk(); document.querySelector(el.dataset.href).scrollIntoView({ behavior: 'smooth' }); }
+        else if (el.dataset.copy) { navigator.clipboard && navigator.clipboard.writeText(el.dataset.copy).catch(function () {}); closeCmdk(); }
+        else if (el.dataset.external) { window.open(el.dataset.external, '_blank', 'noopener'); closeCmdk(); }
+      }
+
+      pill.addEventListener('click', openCmdk);
+      cmdk.querySelector('[data-cmdk-close]').addEventListener('click', closeCmdk);
+      results.querySelectorAll('.cmdk__item').forEach(function (el) {
+        el.addEventListener('click', function () { activate(el); });
+      });
+
+      input.addEventListener('input', function () {
+        var q = input.value.trim().toLowerCase();
+        results.querySelectorAll('.cmdk__item').forEach(function (el) {
+          el.style.display = el.textContent.toLowerCase().indexOf(q) === -1 ? 'none' : '';
+        });
+        setActive(0);
+      });
+
+      document.addEventListener('keydown', function (e) {
+        var isK = (e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey);
+        if (isK) { e.preventDefault(); cmdk.classList.contains('is-open') ? closeCmdk() : openCmdk(); return; }
+        if (!cmdk.classList.contains('is-open')) return;
+        if (e.key === 'Escape') { closeCmdk(); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); var list = items(); var idx = list.findIndex(function (i) { return i.classList.contains('is-active'); }); setActive(Math.min(idx + 1, list.length - 1)); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); var list2 = items(); var idx2 = list2.findIndex(function (i) { return i.classList.contains('is-active'); }); setActive(Math.max(idx2 - 1, 0)); }
+        else if (e.key === 'Enter') { e.preventDefault(); activate(results.querySelector('.cmdk__item.is-active')); }
+      });
+    </script>
   </body>
 </html>
