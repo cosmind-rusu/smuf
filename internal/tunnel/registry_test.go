@@ -1,6 +1,7 @@
 package tunnel
 
 import (
+	"net"
 	"testing"
 	"time"
 
@@ -64,6 +65,50 @@ func TestRegistryConcurrent(t *testing.T) {
 	go func() { r.Get("x") }()
 	go func() { r.List() }()
 	time.Sleep(50 * time.Millisecond)
+}
+
+func TestRegistryAddIfAbsent(t *testing.T) {
+	r := NewRegistry()
+	if !r.AddIfAbsent("dup", &TunnelEntry{Port: "1", CreatedAt: time.Now()}) {
+		t.Fatal("first AddIfAbsent should succeed")
+	}
+	if r.AddIfAbsent("dup", &TunnelEntry{Port: "2", CreatedAt: time.Now()}) {
+		t.Fatal("second AddIfAbsent with the same ID should fail")
+	}
+	got, ok := r.Get("dup")
+	if !ok {
+		t.Fatal("expected entry to exist")
+	}
+	if got.Port != "1" {
+		t.Fatalf("existing entry was overwritten: port = %s, want 1", got.Port)
+	}
+}
+
+func TestRegistryCloseAll(t *testing.T) {
+	r := NewRegistry()
+
+	// Sesión yamux real sobre net.Pipe para comprobar que CloseAll la cierra.
+	srvConn, cliConn := net.Pipe()
+	serverSession, err := yamux.Server(srvConn, yamux.DefaultConfig())
+	if err != nil {
+		t.Fatalf("yamux.Server: %v", err)
+	}
+	clientSession, err := yamux.Client(cliConn, yamux.DefaultConfig())
+	if err != nil {
+		t.Fatalf("yamux.Client: %v", err)
+	}
+	defer clientSession.Close()
+
+	r.Add("t1", &TunnelEntry{Session: serverSession, CreatedAt: time.Now()})
+	r.Add("t2", &TunnelEntry{CreatedAt: time.Now()}) // sin sesión: no debe romper
+
+	r.CloseAll()
+
+	select {
+	case <-serverSession.CloseChan():
+	case <-time.After(2 * time.Second):
+		t.Fatal("CloseAll did not close the session")
+	}
 }
 
 // Stub para satisfacer la compilación sin una sesión real.

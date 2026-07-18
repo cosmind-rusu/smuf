@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -144,7 +145,19 @@ func main() {
 
 	logger.Info("shutting down...")
 	ln.Close()
-	wg.Wait()
+	// Cerrar las sesiones yamux activas desbloquea los handleTunnel, que
+	// hacen su limpieza (registry, puertos TCP) y dejan avanzar a wg.
+	registry.CloseAll()
+	waitDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(waitDone)
+	}()
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		logger.Error("shutdown timeout: forzando salida con túneles aún activos")
+	}
 	logger.Info("goodbye")
 }
 
@@ -354,6 +367,9 @@ func startControl(ln net.Listener, cfg serverConfig, registry *tunnel.Registry, 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return // apagado: listener cerrado desde main
+			}
 			logger.Error("accept: %v", err)
 			return
 		}
@@ -501,13 +517,17 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry, tc
 		publicURL = publicTunnelURL(id, cfg)
 	}
 
-	// Respondemos con el ID asignado y la URL pública que debe mostrar el cliente.
-	fmt.Fprintf(conn, "OK %s %s\n", id, publicURL)
-
-	// Hacemos upgrade a yamux usando BufConn para no perder bytes ya bufferizados
-	session, err := yamux.Server(tunnel.NewBufConn(conn, bufReader), yamux.DefaultConfig())
+	// Hacemos upgrade a yamux usando BufConn para no perder bytes ya bufferizados.
+	// OJO: el LimitReader del handshake NO puede seguir en la cadena de lectura
+	// de yamux: al agotar sus 1024 bytes devolvería EOF permanente y la sesión
+	// moriría tras ~1KB de tráfico. Drenamos primero lo bufferizado y luego
+	// leemos del socket directamente.
+	session, err := yamux.Server(tunnel.NewBufConn(conn, io.MultiReader(bufReader, conn)), yamux.DefaultConfig())
 	if err != nil {
 		logger.Error("[%s] yamux init: %v", id, err)
+		if isTCP {
+			tcpAllocator.release(id)
+		}
 		conn.Close()
 		return
 	}
@@ -524,7 +544,21 @@ func handleTunnel(conn net.Conn, cfg serverConfig, registry *tunnel.Registry, tc
 		entry.Type = tunnel.TunnelTCP
 		entry.PublicTCPPort = strconv.Itoa(publicTCPPort)
 	}
-	registry.Add(id, entry)
+
+	// Registro atómico: el Has() de arriba da el error amable en el caso común,
+	// pero entre Has() y este punto otro cliente pudo ganar el mismo subdominio.
+	if !registry.AddIfAbsent(id, entry) {
+		logger.Error("[%s] tunnel ID conflict (race) from %s", id, conn.RemoteAddr())
+		fmt.Fprintf(conn, "ERR subdomain in use\n")
+		session.Close()
+		if isTCP {
+			tcpAllocator.release(id)
+		}
+		return
+	}
+
+	// Respondemos con el ID asignado y la URL pública que debe mostrar el cliente.
+	fmt.Fprintf(conn, "OK %s %s\n", id, publicURL)
 	logger.Info("[%s] tunnel open → type=%s local port %s | public %s", id, entry.Type, localPort, publicURL)
 
 	// Para TCP, arrancar listener público

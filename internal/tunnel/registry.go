@@ -54,6 +54,19 @@ func (r *Registry) Add(id string, entry *TunnelEntry) {
 	r.mu.Unlock()
 }
 
+// AddIfAbsent registra la entrada sólo si el ID no existe ya. La comprobación
+// y la inserción se hacen bajo el mismo lock, evitando la carrera entre un
+// Has() previo y el Add() (dos clientes con el mismo subdominio a la vez).
+func (r *Registry) AddIfAbsent(id string, entry *TunnelEntry) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.entries[id]; ok {
+		return false
+	}
+	r.entries[id] = entry
+	return true
+}
+
 func (r *Registry) Get(id string) (*TunnelEntry, bool) {
 	r.mu.RLock()
 	e, ok := r.entries[id]
@@ -73,6 +86,23 @@ func (r *Registry) Has(id string) bool {
 	_, ok := r.entries[id]
 	r.mu.RUnlock()
 	return ok
+}
+
+// CloseAll cierra todas las sesiones activas. Los handleTunnel que las
+// gestionan se desbloquean de su <-session.CloseChan() y hacen la limpieza
+// normal (Remove, liberar puertos, etc.). Se usa en el apagado del servidor.
+func (r *Registry) CloseAll() {
+	r.mu.RLock()
+	sessions := make([]*yamux.Session, 0, len(r.entries))
+	for _, e := range r.entries {
+		if e.Session != nil {
+			sessions = append(sessions, e.Session)
+		}
+	}
+	r.mu.RUnlock()
+	for _, s := range sessions {
+		s.Close()
+	}
 }
 
 // List returns a snapshot of all active tunnel metadata.
