@@ -68,7 +68,7 @@ Once deployed, the server URL and auth token are set via Railway's environment v
 
 ### Option A: Download a binary (recommended)
 
-Go to [Releases](https://github.com/cdrusu/smuf/releases) and download the binary for your OS.
+Go to [Releases](https://github.com/cosmind-rusu/smuf/releases) and download the binary for your OS.
 
 | Binary | Where it goes |
 |--------|--------------|
@@ -86,7 +86,7 @@ docker compose up -d
 You'll need [Go](https://go.dev/dl/) 1.21+.
 
 ```bash
-git clone https://github.com/cdrusu/smuf.git && cd smuf
+git clone https://github.com/cosmind-rusu/smuf.git && cd smuf
 go build -o smuf-server ./cmd/smuf-server
 go build -o smuf        ./cmd/smuf
 ```
