@@ -12,8 +12,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"os/signal"
 	"strconv"
@@ -618,7 +620,7 @@ func serveTCPListener(tunnelID string, ln net.Listener, session *yamux.Session) 
 // startPublicHTTP levanta el servidor público. En modo HTTP enruta peticiones
 // directamente; en modo HTTPS atiende challenges ACME y redirige el resto.
 func startPublicHTTP(cfg serverConfig, registry *tunnel.Registry) {
-	proxy := &httpProxy{domain: cfg.domain, registry: registry}
+	proxy := newHTTPProxy(cfg.domain, registry)
 
 	if cfg.httpsEnabled {
 		startHTTPS(cfg, proxy)
@@ -632,10 +634,12 @@ func startPublicHTTP(cfg serverConfig, registry *tunnel.Registry) {
 	logger.Info("http proxy listening on :%s", cfg.httpPort)
 
 	srv := &http.Server{
-		Handler:      proxy,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Handler: proxy,
+		// Sólo limitamos el tiempo de las cabeceras. Un ReadTimeout o un
+		// WriteTimeout globales cortarían a mitad subidas grandes, descargas
+		// lentas y respuestas en streaming (SSE, long-polling).
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 		logger.Fatal("http server: %v", err)
@@ -651,8 +655,9 @@ func startHTTPS(cfg serverConfig, proxy http.Handler) {
 	}
 
 	httpSrv := &http.Server{
-		Addr:    ":" + cfg.httpPort,
-		Handler: manager.HTTPHandler(redirectToHTTPS(cfg)),
+		Addr:              ":" + cfg.httpPort,
+		Handler:           manager.HTTPHandler(redirectToHTTPS(cfg)),
+		ReadHeaderTimeout: 30 * time.Second,
 	}
 	go func() {
 		logger.Info("http ACME/redirect listening on :%s", cfg.httpPort)
@@ -662,12 +667,12 @@ func startHTTPS(cfg serverConfig, proxy http.Handler) {
 	}()
 
 	tlsSrv := &http.Server{
-		Addr:         ":" + cfg.httpsPort,
-		Handler:      proxy,
-		TLSConfig:    &tls.Config{GetCertificate: manager.GetCertificate, MinVersion: tls.VersionTLS12},
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:      ":" + cfg.httpsPort,
+		Handler:   proxy,
+		TLSConfig: &tls.Config{GetCertificate: manager.GetCertificate, MinVersion: tls.VersionTLS12},
+		// Ver nota en startPublicHTTP: nada de ReadTimeout/WriteTimeout.
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	logger.Info("https proxy listening on :%s | acme cache %s", cfg.httpsPort, cfg.acmeCacheDir)
@@ -701,9 +706,103 @@ func redirectToHTTPS(cfg serverConfig) http.Handler {
 	})
 }
 
+// tunnelCtxKey identifica el túnel resuelto para una petición. ServeHTTP lo
+// deja en el contexto y el RoundTripper lo recupera, de modo que el
+// ReverseProxy (que sólo ve la petición) sabe por qué sesión yamux enviarla.
+type tunnelCtxKey struct{}
+
+type tunnelTarget struct {
+	id    string
+	entry *tunnel.TunnelEntry
+}
+
 type httpProxy struct {
 	domain   string
 	registry *tunnel.Registry
+	rp       *httputil.ReverseProxy
+
+	mu sync.Mutex
+	// Un http.Transport por sesión yamux: así el pool de conexiones nunca
+	// mezcla streams de una sesión vieja con un túnel reconectado que
+	// reutiliza el mismo subdominio.
+	transports map[*yamux.Session]*http.Transport
+}
+
+func newHTTPProxy(domain string, registry *tunnel.Registry) *httpProxy {
+	p := &httpProxy{
+		domain:     domain,
+		registry:   registry,
+		transports: make(map[*yamux.Session]*http.Transport),
+	}
+	p.rp = &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.Out.URL.Scheme = "http"
+			// Mantenemos el Host público (abc123.tudominio.com) para que la
+			// app local vea exactamente lo mismo que antes de este cambio.
+			pr.Out.URL.Host = pr.In.Host
+			// Limpia las X-Forwarded-* que llegasen de fuera y pone las
+			// nuestras: sin X-Forwarded-Proto, una app detrás de HTTPS
+			// genera redirects a http:// y rompe cualquier login.
+			pr.SetXForwarded()
+		},
+		Transport: p,
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			id := ""
+			if t, ok := r.Context().Value(tunnelCtxKey{}).(tunnelTarget); ok {
+				id = t.id
+			}
+			logger.Error("[%s] proxy %s %s: %v", id, r.Method, r.URL.Path, err)
+			http.Error(w, "tunnel unavailable", http.StatusBadGateway)
+		},
+		// El ErrorHandler ya registra el fallo; evitamos el log duplicado.
+		ErrorLog: log.New(io.Discard, "", 0),
+	}
+	return p
+}
+
+// RoundTrip envía la petición por la sesión yamux del túnel que ServeHTTP
+// dejó en el contexto.
+func (p *httpProxy) RoundTrip(r *http.Request) (*http.Response, error) {
+	target, ok := r.Context().Value(tunnelCtxKey{}).(tunnelTarget)
+	if !ok {
+		return nil, fmt.Errorf("no tunnel in request context")
+	}
+	return p.transportFor(target.entry.Session).RoundTrip(r)
+}
+
+// transportFor devuelve (creándolo si hace falta) el transport asociado a una
+// sesión yamux. Cada "conexión" que abre el transport es un stream nuevo.
+func (p *httpProxy) transportFor(sess *yamux.Session) *http.Transport {
+	p.mu.Lock()
+	if t, ok := p.transports[sess]; ok {
+		p.mu.Unlock()
+		return t
+	}
+	t := &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return sess.Open()
+		},
+		// El cliente final decide su Accept-Encoding; no comprimimos ni
+		// descomprimimos por nuestra cuenta.
+		DisableCompression:    true,
+		MaxIdleConns:          64,
+		MaxIdleConnsPerHost:   64,
+		IdleConnTimeout:       60 * time.Second,
+		ExpectContinueTimeout: time.Second,
+		// Sin ResponseHeaderTimeout a propósito: una app local legítimamente
+		// lenta no debe ver su respuesta cortada.
+	}
+	p.transports[sess] = t
+	p.mu.Unlock()
+
+	go func() {
+		<-sess.CloseChan()
+		p.mu.Lock()
+		delete(p.transports, sess)
+		p.mu.Unlock()
+		t.CloseIdleConnections()
+	}()
+	return t
 }
 
 func (p *httpProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -732,43 +831,24 @@ func (p *httpProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Abrimos un stream yamux para esta petición concreta
-	stream, err := entry.Session.Open()
-	if err != nil {
-		http.Error(w, "tunnel unavailable", http.StatusBadGateway)
-		logger.Error("[%s] open stream: %v", id, err)
-		return
-	}
-	defer stream.Close()
-
-	// Si es un upgrade (WebSocket, etc.), pasamos a modo túnel de bytes crudo
-	if isUpgradeRequest(r) {
+	// CONNECT no lo cubre ReverseProxy: seguimos tunelizando bytes crudos.
+	if r.Method == http.MethodConnect {
+		stream, err := entry.Session.Open()
+		if err != nil {
+			logger.Error("[%s] open stream: %v", id, err)
+			http.Error(w, "tunnel unavailable", http.StatusBadGateway)
+			return
+		}
+		defer stream.Close()
 		handleUpgrade(w, r, stream)
 		return
 	}
 
-	// Escribimos la petición HTTP en el stream (el cliente la reenvía a localhost)
-	if err := r.Write(stream); err != nil {
-		http.Error(w, "forward error", http.StatusBadGateway)
-		return
-	}
-
-	// Leemos la respuesta que el cliente nos devuelve por el mismo stream
-	resp, err := http.ReadResponse(bufio.NewReader(stream), r)
-	if err != nil {
-		http.Error(w, "response error", http.StatusBadGateway)
-		logger.Error("[%s] read response: %v", id, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	for k, vals := range resp.Header {
-		for _, v := range vals {
-			w.Header().Add(k, v)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	// ReverseProxy se encarga del resto: WebSockets y otros upgrades (101),
+	// respuestas en streaming (hace Flush inmediato en SSE y en respuestas
+	// sin Content-Length) y la limpieza de cabeceras hop-by-hop.
+	ctx := context.WithValue(r.Context(), tunnelCtxKey{}, tunnelTarget{id: id, entry: entry})
+	p.rp.ServeHTTP(w, r.WithContext(ctx))
 }
 
 func (p *httpProxy) serveDashboard(w http.ResponseWriter, r *http.Request) {
@@ -1066,16 +1146,10 @@ func withPort(host, port string) string {
 	return net.JoinHostPort(host, port)
 }
 
-// isUpgradeRequest detecta si una petición HTTP es un protocol upgrade
-// (WebSocket, CONNECT, etc.) que requiere un túnel de bytes bidireccional.
-func isUpgradeRequest(r *http.Request) bool {
-	return strings.ToLower(r.Header.Get("Upgrade")) != "" ||
-		strings.ToLower(r.Header.Get("Connection")) == "upgrade" ||
-		r.Method == http.MethodConnect
-}
-
 // handleUpgrade toma el control de la conexión TCP del cliente (hijack)
 // y pasa a modo túnel de bytes entre el cliente y el stream yamux.
+// Sólo se usa para CONNECT: los upgrades HTTP normales (WebSocket) los
+// gestiona ReverseProxy.
 func handleUpgrade(w http.ResponseWriter, r *http.Request, stream net.Conn) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
