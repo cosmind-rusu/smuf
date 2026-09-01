@@ -22,6 +22,28 @@ smuf exposes a local port on a public URL — like ngrok, but **yours**: no quot
 localhost:3000  ◄─────►  https://a3f1c9.yourdomain.com
 ```
 
+### Why another tunnel?
+
+Because every alternative asks you for something. ngrok wants an account, and a
+paywall stands between you and a URL that stays the same tomorrow. Cloudflare
+Tunnel is free, but your traffic goes through Cloudflare's network and your
+domain has to live there too. frp and friends want a config file on both ends
+before they do anything at all.
+
+smuf asks for nothing:
+
+- **No third-party account.** No signup, no API key, no dashboard you don't own.
+- **Nobody else's network.** Your machine → your server → whoever you sent the
+  link to. That is the entire path, and you own both ends of it.
+- **No config file.** Run each binary once, answer three questions, and the
+  tunnel is up. Everything is env vars after that.
+- **One binary per side.** 4.7 MB for the client, 9.4 MB for the server. No
+  runtime, no daemon, nothing to install.
+
+The trade is honest: you bring a domain and a box to run the server on. If you
+already have both — a VPS, a Raspberry Pi, a free Railway instance — smuf is the
+shortest path from `localhost:3000` to a public URL that is *yours*, end to end.
+
 <br/>
 
 <p align="center">
@@ -196,7 +218,7 @@ Uses [`hashicorp/yamux`](https://github.com/hashicorp/yamux) to multiplex multip
 - [x] TCP tunnels (not only HTTP)
 - [x] Official Docker image
 - [x] Pre-compiled binaries
-- [ ] Server-Sent Events (SSE)
+- [x] Server-Sent Events (SSE)
 
 ---
 
