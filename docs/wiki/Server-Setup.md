@@ -1,111 +1,127 @@
 # Server Setup
 
-This guide covers setting up `smuf-server` on a VPS for production use.
+An internet-facing server needs more than a running binary: the control listener, public listeners, DNS, and advertised URLs must describe the same topology.
 
 ## Prerequisites
 
-- A VPS with a public IP (any Linux distribution)
-- A domain name pointing to your VPS (e.g., `smuf.yourdomain.com`)
-- Ports 7000 (control) and 8080 (HTTP) accessible
+- A host with a public route to the ports you will use.
+- A base domain such as `tunnels.example.com`.
+- DNS records for both the base domain and `*.tunnels.example.com`, pointing to the same smuf-server instance.
+- Inbound TCP access to `SMUF_CONTROL_PORT`, default `7000`, and `SMUF_HTTP_PORT`, default `8080`.
+- A shared random token stored with restricted read access.
+- For raw TCP, a configured allocation range and inbound access to those public ports.
 
-## Basic setup
+A single base-domain DNS record is not enough for random or custom HTTP subdomains. A platform that provides only one HTTP hostname and no raw TCP control route does not satisfy these requirements.
 
-```bash
-# Download the server binary
-wget https://github.com/cosmind-rusu/smuf/releases/latest/download/smuf_0.3.0_Linux_x86_64.tar.gz
-tar -xzf smuf_0.3.0_Linux_x86_64.tar.gz
-sudo mv smuf-server /usr/local/bin/
+Install the server using [Installation](Installation), then configure it using [Configuration](Configuration).
 
-# Create a config directory
-mkdir -p /etc/smuf
-```
-
-## Configuration
-
-Create `/etc/smuf/smuf-server.env`:
+## Minimal HTTP configuration
 
 ```env
-SMUF_DOMAIN=smuf.yourdomain.com
-SMUF_AUTH_TOKEN=<generate-with-openssl-rand-hex-32>
-SMUF_HTTP_PORT=8080
+SMUF_DOMAIN=tunnels.example.com
+SMUF_AUTH_TOKEN=paste-a-long-random-token-here
 SMUF_CONTROL_PORT=7000
-SMUF_MAX_CONNS_PER_IP=10
+SMUF_HTTP_PORT=8080
+SMUF_HTTPS=false
+SMUF_MAX_CONNS_PER_IP=5
+SMUF_CONN_RATE_PER_MIN=30
 ```
 
-## Systemd service
+Start the server from the environment where these values are set:
 
-Create `/etc/systemd/system/smuf-server.service`:
+```bash
+./smuf-server
+```
+
+Public tunnel URLs will use `http://<id>.tunnels.example.com:8080`. The base domain serves the dashboard. Do not expose this setup beyond a trusted network without reading the security notes below.
+
+## Direct HTTPS with Let's Encrypt
+
+Use this configuration when ports `80` and `443` reach smuf-server directly:
+
+```env
+SMUF_DOMAIN=tunnels.example.com
+SMUF_AUTH_TOKEN=paste-a-long-random-token-here
+SMUF_CONTROL_PORT=7000
+SMUF_HTTP_PORT=80
+SMUF_HTTPS=true
+SMUF_HTTPS_PORT=443
+SMUF_ACME_EMAIL=admin@example.com
+SMUF_ACME_CACHE=/var/lib/smuf/certs
+```
+
+The ACME HTTP-01 listener must be reachable on public port `80`. The HTTPS listener normally uses `443`. Both the base domain and wildcard records must resolve correctly, and the service account must be able to write to the cache directory.
+
+The current ACME policy accepts the configured base domain and every subdomain, not only names with registered tunnels. A TLS client can vary SNI to trigger on-demand certificate issuance attempts, cache growth, and certificate authority quota consumption. Keep the cache across restarts, but do not treat persistence as a defense against unwanted requests.
+
+This policy needs hardening before built-in HTTPS is exposed as a public service. Until then, prefer a reverse proxy that validates allowed hosts and terminates TLS with a wildcard certificate provisioned through DNS-01. This avoids smuf's per-SNI HTTP-01 issuance path. When smuf's own HTTPS redirect is enabled, it also constructs the redirect target from the request `Host` without validating it, so host validation at a trusted proxy is important.
+
+Public HTTPS does not encrypt the raw TCP control connection between `smuf` and `smuf-server`.
+
+If an external router maps different public ports, `SMUF_PUBLIC_HTTP_PORT` and `SMUF_PUBLIC_HTTPS_PORT` adjust the ports printed in tunnel URLs. They do not configure the mapping itself.
+
+## systemd service
+
+The following is a Linux systemd example. It uses a dynamic service account and a persistent state directory. The capability setting permits binding to ports `80` and `443` without running the process as root.
+
+Create `/etc/smuf/smuf-server.env` with the desired configuration, including an absolute `SMUF_ACME_CACHE=/var/lib/smuf/certs` when HTTPS is enabled. Then create `/etc/systemd/system/smuf-server.service`:
 
 ```ini
 [Unit]
-Description=smuf HTTP tunnel server
-After=network.target
+Description=smuf HTTP and TCP tunnel server
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
 EnvironmentFile=/etc/smuf/smuf-server.env
 ExecStart=/usr/local/bin/smuf-server
-Restart=always
+Restart=on-failure
 RestartSec=5
-User=nobody
-Group=nogroup
+DynamicUser=yes
+StateDirectory=smuf
+WorkingDirectory=/var/lib/smuf
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-Enable and start:
+Enable and inspect the service:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable smuf-server
-sudo systemctl start smuf-server
+sudo systemctl enable --now smuf-server
 sudo systemctl status smuf-server
+journalctl -u smuf-server
 ```
 
-## HTTPS with Let's Encrypt (auto)
+Check that the environment file is readable by systemd but not by unrelated users. Adapt paths and service management to your distribution and local policy.
 
-Set these environment variables to enable automatic TLS:
+## Docker Compose
 
-```env
-SMUF_HTTPS=true
-SMUF_HTTPS_PORT=443
-SMUF_ACME_EMAIL=your@email.com
-```
+The supplied Compose example builds the server, publishes `7000`, `8080`, `80`, and `443`, and mounts `./certs` at `/app/certs`. Replace its placeholder domain and provide `SMUF_AUTH_TOKEN` in the Compose environment.
 
-The server will automatically obtain and renew certificates from Let's Encrypt.
+For direct HTTPS, change the example to use `SMUF_HTTP_PORT=80` and `SMUF_HTTPS=true`; merely enabling HTTPS while leaving the ACME listener on an unreachable port will not satisfy HTTP-01.
 
-> **Note:** Port 80 must also be accessible for the ACME HTTP-01 challenge.
+The example sets `SMUF_TCP_PORT_RANGE=20000-30000` but does not publish those ports. Add explicit host mappings for a narrower range you actually need, then allow those host ports through external firewalls. Container port declarations alone do not create provider firewall rules.
 
-## Reverse proxy (Nginx)
+## Reverse proxies and hosted platforms
 
-If you prefer to terminate TLS at a reverse proxy:
+The control port requires raw TCP forwarding. An HTTP-only reverse proxy cannot accept the smuf client handshake. Public HTTP routing must preserve the subdomain in `Host`, including for WebSocket upgrades and streaming responses.
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name smuf.yourdomain.com;
+When a proxy terminates TLS, smuf sees an HTTP connection and derives forwarding headers from that request. Test absolute redirects and URL generation in the local application. The client prints `https` only when smuf's own `SMUF_HTTPS` mode is enabled, so externally terminated TLS also requires care when interpreting the printed URL.
 
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
+The server stores active tunnel state in memory. Keep control and public traffic on the same instance and do not assume that horizontal scaling will work. The supplied Railway configuration fixes one replica. See the [Railway deployment notes](https://github.com/cosmind-rusu/smuf/blob/main/docs/railway-template-description.md) for the remaining networking checks.
 
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_buffering off;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
+## Internet-facing checklist
 
-## Security checklist
-
-- [ ] Generate a strong auth token (`openssl rand -hex 32`)
-- [ ] Set `SMUF_MAX_CONNS_PER_IP` to prevent abuse
-- [ ] Use HTTPS (auto Let's Encrypt or reverse proxy)
-- [ ] Run as non-root user (systemd `User=nobody`)
-- [ ] Configure firewall (allow only ports 7000, 8080, 443, 80)
-- [ ] Keep the server updated to the latest version
+- Use the current server for demos or protected personal use, not as a public multi-tenant service.
+- Set `SMUF_AUTH_TOKEN`; an empty value disables client authentication.
+- Treat the control channel as unencrypted TCP. Use a protected network path when token and tunneled traffic must not cross the network in clear text.
+- Protect exposed applications independently. Tunnel registration authentication does not authenticate public visitors.
+- Restrict the unauthenticated dashboard and `/_smuf/tunnels` if tunnel URLs, local ports, and client IPs should not be public.
+- Open only required ports, and restrict source addresses for sensitive raw TCP services where your network allows it.
+- Keep control limits enabled and remember that clients behind NAT or a TCP proxy can share the same observed IP bucket. There are no server-wide limits on connections, yamux streams, memory, CPU, or bandwidth.
+- Persist and protect ACME state, monitor service logs, and test recovery after a server restart. Do not expose the current per-SNI ACME policy or unvalidated HTTPS redirect directly to an untrusted public network.

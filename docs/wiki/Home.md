@@ -1,23 +1,25 @@
-# Welcome to the smuf wiki 📖
+# smuf wiki
 
-This wiki provides documentation for **smuf** — a self-hosted HTTP tunnel tool like ngrok, but yours: no quotas, no limits, on your own server.
+smuf is a self-hosted HTTP and raw TCP tunnel client and server written in Go. It exposes a local port through your own reachable server. HTTP tunnels use subdomains of your base domain; raw TCP tunnels use ports allocated from a configured range.
 
-## 📑 Pages
+There is no smuf account or hosted control plane. Your infrastructure, provider quotas, network, and smuf's per-IP control limits still apply.
+
+## Pages
 
 | Page | Description |
 |------|-------------|
-| [Installation](Installation) | Install smuf — binary, Docker, or build from source |
-| [Server Setup](Server-Setup) | Configure smuf-server on your VPS |
-| [Client Usage](Client-Usage) | Using the smuf client from your machine |
-| [Configuration](Configuration) | All environment variables explained |
-| [Quick Start](Quick-Start) | Get a tunnel running in 2 minutes |
-| [Architecture](Architecture) | How smuf works under the hood |
-| [Troubleshooting](Troubleshooting) | Common issues and solutions |
-| [Release Process](Release-Process) | How to create a new release |
+| [Installation](Installation) | Binaries, source builds, and release targets |
+| [Quick Start](Quick-Start) | Configure a server and expose a local HTTP port |
+| [Server Setup](Server-Setup) | DNS, HTTPS, Docker, and systemd |
+| [Client Usage](Client-Usage) | HTTP, TCP, subdomains, and reconnection |
+| [Configuration](Configuration) | Variables, defaults, and file loading order |
+| [Architecture](Architecture) | Handshake, routing, yamux, and state |
+| [Troubleshooting](Troubleshooting) | Connection, DNS, TLS, and proxy failures |
+| [Release Process](Release-Process) | Tags, GoReleaser, artifacts, and publication |
 
----
+Start with the main [README](https://github.com/cosmind-rusu/smuf#readme) for the security model and current limitations. In particular, public HTTPS does not encrypt the client-to-server control channel, and the dashboard has no built-in authentication.
 
-### 🚀 Quick links
+## Project links
 
 - [GitHub repository](https://github.com/cosmind-rusu/smuf)
 - [Releases](https://github.com/cosmind-rusu/smuf/releases)

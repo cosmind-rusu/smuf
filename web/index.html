@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>smuf — túneles HTTP self-hosted</title>
+    <title>smuf: túneles HTTP y TCP self-hosted</title>
     <meta
       name="description"
-      content="smuf te da una URL pública para tu localhost en segundos. Open source, self-hosted y escrito en Go."
+      content="smuf expone servicios locales a través de tu propio servidor y dominio. Open source, self-hosted y escrito en Go."
     />
     <link rel="icon" href="logo.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -580,8 +580,8 @@
           <button class="cmdk__item" data-href="#how">Cómo funciona</button>
           <button class="cmdk__item" data-href="#start">Empezar</button>
           <p class="cmdk__group">Acciones</p>
-          <button class="cmdk__item" data-copy="./smuf-server">Copiar: instalar servidor</button>
-          <button class="cmdk__item" data-copy="SMUF_SERVER=tuservidor.com:7000 ./smuf 3000">Copiar: abrir túnel</button>
+          <button class="cmdk__item" data-copy="./smuf-server --setup">Copiar: configurar servidor</button>
+          <button class="cmdk__item" data-copy="SMUF_SERVER=tuservidor.com:7000 SMUF_AUTH_TOKEN=tu-token ./smuf 3000">Copiar: abrir túnel</button>
           <button class="cmdk__item" data-external="https://github.com/cosmind-rusu/smuf">Abrir en GitHub ↗</button>
         </div>
         <div class="cmdk__foot">
@@ -598,10 +598,10 @@
       <section class="hero container">
         <div class="hero__grid">
           <div class="reveal" style="--i:0">
-            <h1>De tu terminal al mundo, en un comando.</h1>
+            <h1>Tu app local, accesible desde tu propio servidor.</h1>
             <p class="hero__lede">
-              smuf abre un túnel entre tu servidor y tu máquina: tu app local recibe una URL pública real,
-              sin registros, sin límites de uso y sin que tus datos salgan de tu propia infraestructura.
+              smuf conecta un puerto local con tu servidor. Para usarlo necesitas un host accesible,
+              DNS wildcard para los subdominios, puertos abiertos y un token compartido.
             </p>
             <div class="hero__ctas">
               <a class="btn btn--primary" href="https://github.com/cosmind-rusu/smuf" target="_blank" rel="noopener">Ver en GitHub</a>
@@ -617,10 +617,10 @@
               </div>
               <pre id="hero-cmd"><span class="tok-muted">$</span> ./smuf 3000
 
-<span class="tok-status">Tunnel ready</span>
+<span class="tok-status">Tunnel ready!</span>
 
-<span class="tok-muted">Local  →</span> http://localhost:3000
-<span class="tok-muted">Public →</span> <span class="tok-accent">https://a3f1c9.tudominio.com</span>
+<span class="tok-muted">Local   →</span> http://localhost:3000
+<span class="tok-muted">Public  →</span> <span class="tok-accent">http://a3f1c9d4e2b8.tudominio.com:8080</span>
 
 <span class="tok-muted"># Ctrl+C para detener</span></pre>
             </div>
@@ -632,16 +632,16 @@
       <section class="values container" id="values">
         <div class="values__row">
           <div class="values__item reveal" style="--i:0">
-            <h3>Fácil</h3>
-            <p>Un solo comando, <code>./smuf 3000</code>, y tienes una URL que cualquiera puede abrir. Sin paneles, sin configuración previa.</p>
+            <h3>Directo</h3>
+            <p>Después de configurar ambos extremos, <code>./smuf 3000</code> expone el puerto local con una URL para compartir una demo.</p>
           </div>
           <div class="values__item reveal" style="--i:1">
-            <h3>Rápido</h3>
-            <p>La URL está lista en segundos. Sin correo de verificación, sin plan de precios, sin cola de espera.</p>
+            <h3>Asistido</h3>
+            <p>El asistente genera el token y guarda la configuración. Tú proporcionas el servidor, el DNS y el acceso a los puertos.</p>
           </div>
           <div class="values__item reveal" style="--i:2">
             <h3>Tuyo</h3>
-            <p>El tráfico entra por tu propio servidor. Token de autenticación, rate limiting e IDs criptográficos de fábrica.</p>
+            <p>El endpoint público está en tu servidor. El token autentica el registro y los límites por IP controlan las conexiones de clientes.</p>
           </div>
         </div>
       </section>
@@ -649,8 +649,8 @@
       <!-- CÓMO FUNCIONA -->
       <section class="how container" id="how">
         <div class="how__head reveal" style="--i:0">
-          <h2>Tu tráfico no pasa por nadie más.</h2>
-          <p>smuf conecta tu servidor con tu máquina directamente. Lo que entra por la URL pública sale por tu localhost — nada más se sienta en medio.</p>
+          <h2>Tú eliges el servidor del endpoint.</h2>
+          <p>smuf conecta tu servidor con tu máquina y reenvía las peticiones a localhost. Aviso de seguridad: el canal cliente-servidor usa TCP sin TLS; HTTPS, si lo activas, solo protege la conexión entre el visitante y el servidor. En su estado actual, úsalo para demos o uso personal protegido, no para un servicio público multiinquilino.</p>
         </div>
         <div class="diagram reveal" style="--i:1">
           <div class="diagram__node">
@@ -667,24 +667,24 @@
           <div class="diagram__link"></div>
           <div class="diagram__node">
             <div class="diagram__icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
-            <span class="diagram__label">Cualquier persona</span>
-            <span class="diagram__sub">a3f1c9.tudominio.com</span>
+            <span class="diagram__label">Visitante de la demo</span>
+            <span class="diagram__sub">a3f1c9d4e2b8.tudominio.com</span>
           </div>
         </div>
       </section>
 
-      <!-- QUICKSTART — the one graphite band, narrative-workflow stages -->
+      <!-- QUICKSTART: the one graphite band, narrative-workflow stages -->
       <section class="quickstart" id="start">
         <div class="container">
           <div class="quickstart__head reveal" style="--i:0">
-            <h2>Tres pasos, menos de dos minutos.</h2>
-            <p>Nada que instalar además de Go. Nada que registrar.</p>
+            <h2>Tres pasos para abrir un túnel.</h2>
+            <p>Necesitas Go 1.26.3 o posterior, un servidor accesible, DNS wildcard y puertos abiertos. El asistente te ayuda con la configuración y el token.</p>
           </div>
 
           <div class="stage reveal" style="--i:1">
             <div>
-              <h3>Instala smuf en tu servidor</h3>
-              <p>Clona el repositorio y compílalo donde vaya a vivir tu túnel.</p>
+              <h3>Compila e inicia el servidor</h3>
+              <p>Clona el repositorio, compila el servidor y ejecuta su asistente en el host público.</p>
             </div>
             <div class="code-card">
               <div class="code-card__label">
@@ -693,37 +693,38 @@
               </div>
               <pre id="stage-1"><span class="tok-muted">$</span> git clone https://github.com/cosmind-rusu/smuf.git
 <span class="tok-muted">$</span> cd smuf &amp;&amp; go build -o smuf-server ./cmd/smuf-server
-<span class="tok-muted">$</span> ./smuf-server</pre>
+<span class="tok-muted">$</span> ./smuf-server --setup</pre>
             </div>
           </div>
 
           <div class="stage reveal" style="--i:2">
             <div>
-              <h3>Compila el cliente en tu máquina</h3>
-              <p>Un único ejecutable. Ninguna dependencia adicional que instalar.</p>
+              <h3>Compila y configura el cliente</h3>
+              <p>Genera el ejecutable y guarda la dirección del servidor, el token y, si quieres, un subdominio.</p>
             </div>
             <div class="code-card">
               <div class="code-card__label">
                 <span>bash</span>
                 <button class="code-card__copy" type="button" data-copy-target="stage-2">Copiar</button>
               </div>
-              <pre id="stage-2"><span class="tok-muted">$</span> go build -o smuf ./cmd/smuf</pre>
+              <pre id="stage-2"><span class="tok-muted">$</span> go build -o smuf ./cmd/smuf
+<span class="tok-muted">$</span> ./smuf --setup</pre>
             </div>
           </div>
 
           <div class="stage reveal" style="--i:3">
             <div>
               <h3>Abre el túnel y comparte</h3>
-              <p>Dile a smuf qué puerto exponer. La URL pública queda lista al instante.</p>
+              <p>Con la app local escuchando, indica el servidor y el mismo token. La URL impresa depende de tu configuración.</p>
             </div>
             <div class="code-card">
               <div class="code-card__label">
                 <span>bash</span>
                 <button class="code-card__copy" type="button" data-copy-target="stage-3">Copiar</button>
               </div>
-              <pre id="stage-3"><span class="tok-muted">$</span> SMUF_SERVER=tuservidor.com:7000 ./smuf 3000
+              <pre id="stage-3"><span class="tok-muted">$</span> SMUF_SERVER=tuservidor.com:7000 SMUF_AUTH_TOKEN=tu-token ./smuf 3000
 
-<span class="tok-accent">→</span> https://a3f1c9.tuservidor.com  <span class="tok-muted"># comparte este enlace</span></pre>
+<span class="tok-accent">→</span> http://a3f1c9d4e2b8.tuservidor.com:8080  <span class="tok-muted"># enlace para la demo</span></pre>
             </div>
           </div>
 
@@ -735,11 +736,11 @@
 
     </main>
 
-    <!-- FOOTER — Ft4 dense typographic -->
+    <!-- FOOTER: Ft4 dense typographic -->
     <footer class="foot">
       <div class="container">
         <p>
-          smuf — túneles HTTP self-hosted, escrito en Go. Código abierto bajo licencia MIT.
+          smuf: túneles HTTP y TCP self-hosted, escrito en Go. Código abierto bajo licencia Apache 2.0.
           Producto de cdrusu. <a href="https://github.com/cosmind-rusu/smuf" target="_blank" rel="noopener">github.com/cosmind-rusu/smuf</a>
         </p>
       </div>
